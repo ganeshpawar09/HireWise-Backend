@@ -9,7 +9,7 @@ import { verifyAccessToken } from "../middlewares/auth.middleware.js";
 
 const userRouter = Router();
 
-userRouter.route("/send-otp").get(sendOTP);
+userRouter.route("/send-otp").post(sendOTP);
 userRouter.route("/verify-otp").post(verifyOTP);
 userRouter.route("/update-user").post(updateUserProfile);
 userRouter.route("/get-user").get(getUserById);
