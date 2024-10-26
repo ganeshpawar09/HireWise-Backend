@@ -105,20 +105,20 @@ const sendOTPEmail = async (email, otp) => {
 
     await transporter.sendMail(mailOptions);
   } catch (error) {
-    return new ApiError(500, "Error sending OTP email: " + error.message);
+    throw new ApiError(500, "Error sending OTP email: " + error.message);
   }
 };
 
 const sendOTP = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  console.log(email);
   if (!email) {
-    return new ApiError(400, "Email is required");
+    throw new ApiError(400, "Email is required");
   }
 
+  // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
-    return new ApiError(400, "Invalid email format");
+    throw new ApiError(400, "Invalid email format");
   }
 
   const otp = generateOTP;
@@ -131,42 +131,49 @@ const sendOTP = asyncHandler(async (req, res) => {
   );
 
   if (!savedOtp) {
-    return new ApiError(500, "Error saving OTP");
+    throw new ApiError(500, "Error saving OTP");
   }
 
   await sendOTPEmail(email, otp);
 
-  return res
+  throw res
     .status(200)
     .json(new ApiResponse(200, { email }, "OTP sent successfully"));
 });
 
 const verifyOTP = asyncHandler(async (req, res) => {
   const { email, otp } = req.body;
+  console.log(email, otp);
 
+  // Validate input
   if (!email || !otp) {
-    return new ApiError(400, "Email and OTP are required");
+    throw res.status(400).json(new ApiError(400, "Email and OTP are required"));
   }
 
+  // Check for OTP record
   const otpRecord = await Otp.findOne({ email });
 
   if (!otpRecord) {
-    return new ApiError(400, "No OTP found for this email");
+    throw res
+      .status(400)
+      .json(new ApiError(400, "No OTP found for this email"));
   }
 
+  // Check if OTP has expired
   if (new Date() > otpRecord.otpExpiration) {
     await Otp.deleteOne({ email });
-    return new ApiError(400, "OTP has expired");
+    throw res.status(400).json(new ApiError(400, "OTP has expired"));
   }
 
+  // Validate the OTP
   if (otpRecord.otp !== otp) {
-    return new ApiError(400, "Invalid OTP");
+    throw res.status(400).json(new ApiError(400, "Invalid OTP"));
   }
 
-  await Otp.deleteOne({ email });
-
+  // Find the user by email
   let user = await User.findOne({ email });
 
+  // If user does not exist, create a new user
   if (!user) {
     user = await User.create({
       email,
@@ -174,9 +181,11 @@ const verifyOTP = asyncHandler(async (req, res) => {
     });
   }
 
+  // Generate access token for the user
   const accessToken = user.generateAccessToken();
 
-  return res
+  // Respond with success message and user info
+  throw res
     .status(200)
     .json(
       new ApiResponse(200, { user, accessToken }, "OTP verified successfully")
@@ -190,10 +199,10 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findByIdAndUpdate(userId, updates, { new: true });
 
   if (!user) {
-    return new ApiError(404, "User not found");
+    throw new ApiError(404, "User not found");
   }
 
-  return res
+  throw res
     .status(200)
     .json(new ApiResponse(200, { user }, "User profile updated successfully"));
 });
@@ -202,13 +211,13 @@ const getUserById = asyncHandler(async (req, res) => {
   const userId = req.body.userId;
 
   if (!userId) {
-    return new ApiError(400, "User ID is required");
+    throw new ApiError(400, "User ID is required");
   }
 
   const user = await User.findById(userId);
 
   if (!user) {
-    return new ApiError(404, "User not found");
+    throw new ApiError(404, "User not found");
   }
 
   return res

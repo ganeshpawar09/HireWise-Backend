@@ -7,20 +7,22 @@ const ChatSchema = new mongoose.Schema({
 
 // Define Team schema
 const TeamSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
   teamName: { type: String, required: true },
   hackathonId: { type: String, required: true },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   maxMembers: { type: Number, required: true },
   requiredSkills: [{ type: String, required: true }],
   joiningRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  teamLeader: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  teamLeader: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+  },
   chats: [ChatSchema],
 });
 
 // Define Hackathon schema
 const HackathonSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
   hackathonName: { type: String, required: true },
   description: { type: String, required: true },
   startDate: { type: Date, required: true },

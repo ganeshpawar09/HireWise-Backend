@@ -3,64 +3,63 @@ import jwt from "jsonwebtoken";
 
 // Define Education schema
 const EducationSchema = new mongoose.Schema({
-  institution: { type: String, required: true },
-  degree: { type: String, required: true },
-  startYear: { type: String, required: true },
-  endYear: { type: String, required: true },
+  institution: { type: String },
+  degree: { type: String },
+  startYear: { type: String },
+  endYear: { type: String },
 });
 
 // Define Project schema
 const ProjectSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  description: { type: String, required: true },
-  technologyUsed: { type: String, required: true },
+  title: { type: String },
+  description: { type: String },
+  technologyUsed: { type: String },
   projectLink: { type: String },
 });
 
 // Define Experience schema
 const ExperienceSchema = new mongoose.Schema({
-  companyName: { type: String, required: true },
-  jobTitle: { type: String, required: true },
-  startDate: { type: String, required: true },
+  companyName: { type: String },
+  jobTitle: { type: String },
+  startDate: { type: String },
   endDate: { type: String },
 });
 
 // Define Assessment schema
 const AssessmentSchema = new mongoose.Schema({
-  overallScore: { type: Number, required: true },
-  date: { type: Date, required: true },
+  overallScore: { type: Number },
+  date: { type: Date },
   detailedScores: { type: Map, of: Number },
 });
 
 // Define User schema
 const UserSchema = new mongoose.Schema({
   // Personal Information
-  id: { type: String, required: true, unique: true },
-  firstName: { type: String, required: true },
+  firstName: { type: String },
   middleName: { type: String },
-  lastName: { type: String, required: true },
-  name: { type: String, required: true },
-  gender: { type: String, required: true },
-  dateOfBirth: { type: String, required: true },
-  differentlyAbled: { type: Boolean, required: true },
-  location: { type: String, required: true },
+  lastName: { type: String },
+  name: { type: String },
+  gender: { type: String },
+  dateOfBirth: { type: String },
+  differentlyAbled: { type: Boolean },
+  location: { type: String },
 
   // Contact Information
-  email: { type: String, required: true },
-  phoneNumber: { type: String, required: true },
+  email: { type: String, required: true }, // Keep email required
+  phoneNumber: { type: String },
   socialLinks: { type: Map, of: String },
 
   // Resume and Profile
-  resume: { type: String, required: true },
-  resumeFileName: { type: String, required: true },
-  lastUpdatedDate: { type: String, required: true },
-  fresher: { type: Boolean, required: true },
-  profileHeadline: { type: String, required: true },
-  profileSummary: { type: String, required: true },
-  careerBreak: { type: Boolean, required: true },
+  resume: { type: String },
+  resumeFileName: { type: String },
+  lastUpdatedDate: { type: String },
+  fresher: { type: Boolean },
+  profileHeadline: { type: String },
+  profileSummary: { type: String },
+  careerBreak: { type: Boolean },
 
   // Skills and Achievements
-  keySkills: [{ type: String, required: true }],
+  keySkills: [{ type: String }],
   achievements: [{ type: String }],
   targetCompanies: [{ type: String }],
 
