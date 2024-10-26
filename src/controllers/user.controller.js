@@ -111,6 +111,7 @@ const sendOTPEmail = async (email, otp) => {
 
 const sendOTP = asyncHandler(async (req, res) => {
   const { email } = req.body;
+  console.log(email);
   if (!email) {
     return new ApiError(400, "Email is required");
   }
