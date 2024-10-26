@@ -9,7 +9,6 @@ import {
   sendTeamInvitation,
   removeMember,
   rejectTeamInvitation,
-  addMemberToTeam,
   acceptTeamInvitation,
 } from "../controllers/hackathon.controller.js";
 

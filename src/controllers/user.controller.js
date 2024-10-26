@@ -115,7 +115,6 @@ const sendOTP = asyncHandler(async (req, res) => {
     return new ApiError(400, "Email is required");
   }
 
-  // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return new ApiError(400, "Invalid email format");

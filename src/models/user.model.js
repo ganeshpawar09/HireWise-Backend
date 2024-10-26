@@ -10,7 +10,7 @@ const EducationSchema = new mongoose.Schema({
 });
 
 // Define Project schema
-const ProjectSchema = new Schema({
+const ProjectSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String, required: true },
   technologyUsed: { type: String, required: true },
@@ -18,7 +18,7 @@ const ProjectSchema = new Schema({
 });
 
 // Define Experience schema
-const ExperienceSchema = new Schema({
+const ExperienceSchema = new mongoose.Schema({
   companyName: { type: String, required: true },
   jobTitle: { type: String, required: true },
   startDate: { type: String, required: true },
@@ -26,14 +26,14 @@ const ExperienceSchema = new Schema({
 });
 
 // Define Assessment schema
-const AssessmentSchema = new Schema({
+const AssessmentSchema = new mongoose.Schema({
   overallScore: { type: Number, required: true },
   date: { type: Date, required: true },
   detailedScores: { type: Map, of: Number },
 });
 
 // Define User schema
-const UserSchema = new Schema({
+const UserSchema = new mongoose.Schema({
   // Personal Information
   id: { type: String, required: true, unique: true },
   firstName: { type: String, required: true },
@@ -70,12 +70,12 @@ const UserSchema = new Schema({
   projects: [ProjectSchema],
 
   // Job Applications
-  appliedJobs: [{ type: Schema.Types.ObjectId, ref: "Job" }],
+  appliedJobs: [{ type: mongoose.Schema.Types.ObjectId, ref: "Job" }],
 
   // Teams
   joinedTeams: { type: Map, of: String },
   createdTeams: { type: Map, of: String },
-  teamInvitations: [{ type: Schema.Types.ObjectId, ref: "Team" }],
+  teamInvitations: [{ type: mongoose.Schema.Types.ObjectId, ref: "Team" }],
 
   // Assessments
   aptitudeAssessments: [AssessmentSchema],
@@ -85,7 +85,7 @@ const UserSchema = new Schema({
   accessToken: [{ type: String }],
 });
 
-userSchema.methods.generateAccessToken = function () {
+UserSchema.methods.generateAccessToken = function () {
   return jwt.sign(
     {
       _id: this._id,
@@ -99,4 +99,4 @@ userSchema.methods.generateAccessToken = function () {
   );
 };
 
-export const User = mongoose.model("User", userSchema);
+export const User = mongoose.model("User", UserSchema);

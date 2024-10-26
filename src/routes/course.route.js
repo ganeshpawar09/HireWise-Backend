@@ -3,7 +3,7 @@ import {
   uploadCourse,
   updateCourse,
   getAllCourses,
-} from "../controllers/courseController.js";
+} from "../controllers/course.controller.js";
 
 const courseRouter = express.Router();
 

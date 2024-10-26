@@ -34,4 +34,4 @@ const CourseSchema = new mongoose.Schema({
 });
 
 // Export the Course model
-export const Course = mongoose.model("Course", courseName);
+export const Course = mongoose.model("Course", CourseSchema);
