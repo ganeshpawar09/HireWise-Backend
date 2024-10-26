@@ -195,6 +195,7 @@ const verifyOTP = asyncHandler(async (req, res) => {
 const updateUserProfile = asyncHandler(async (req, res) => {
   const { userId, updates } = req.body;
 
+  console.log(req.body);
   const user = await User.findByIdAndUpdate(userId, updates, { new: true });
 
   if (!user) {
