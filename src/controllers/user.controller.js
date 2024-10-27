@@ -5,6 +5,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import nodemailer from "nodemailer";
 import otpGenerator from "otp-generator";
+import axios from "axios";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -111,6 +112,7 @@ const sendOTPEmail = async (email, otp) => {
 
 const sendOTP = asyncHandler(async (req, res) => {
   const { email } = req.body;
+  console.log(email);
   if (!email) {
     throw new ApiError(400, "Email is required");
   }
@@ -143,8 +145,8 @@ const sendOTP = asyncHandler(async (req, res) => {
 
 const verifyOTP = asyncHandler(async (req, res) => {
   const { email, otp } = req.body;
-  console.log(email, otp);
-
+  console.log(email);
+  console.log(otp);
   // Validate input
   if (!email || !otp) {
     throw res.status(400).json(new ApiError(400, "Email and OTP are required"));
@@ -185,7 +187,7 @@ const verifyOTP = asyncHandler(async (req, res) => {
   const accessToken = user.generateAccessToken();
 
   // Respond with success message and user info
-  throw res
+  return res
     .status(200)
     .json(
       new ApiResponse(200, { user, accessToken }, "OTP verified successfully")
@@ -195,14 +197,14 @@ const verifyOTP = asyncHandler(async (req, res) => {
 const updateUserProfile = asyncHandler(async (req, res) => {
   const { userId, updates } = req.body;
 
-  console.log(req.body);
+  console.log(userId);
+  console.log(updates);
   const user = await User.findByIdAndUpdate(userId, updates, { new: true });
-
   if (!user) {
     throw new ApiError(404, "User not found");
   }
 
-  throw res
+  return res
     .status(200)
     .json(new ApiResponse(200, { user }, "User profile updated successfully"));
 });
@@ -225,4 +227,257 @@ const getUserById = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, { user }, "User profile fetched successfully"));
 });
 
-export { sendOTP, verifyOTP, updateUserProfile, getUserById };
+const scrapeLeetcodeProfile = async (username) => {
+  try {
+    console.log("Fetching profile for:", username); // Debug log
+    console.log(`${process.env.fastApi}/api/leetcode/profile`);
+    const response = await fetch(
+      `${process.env.fastApi}/api/leetcode/profile`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ username }),
+        // Add timeout
+        timeout: 30000,
+      }
+    );
+
+    // console.log("Response status:", response.status); // Debug log
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      // console.error("Error response:", errorText); // Debug log
+      throw new Error(`Failed to fetch LeetCode profile: ${errorText}`);
+    }
+
+    const data = await response.json();
+    // console.log("Received data:", data); // Debug log
+
+    if (!data || !data.data) {
+      throw new Error("Invalid response format");
+    }
+
+    return data.data;
+  } catch (error) {
+    console.error("Detailed error:", error); // Debug log
+    throw new ApiError(500, "Failed to fetch LeetCode profile", [
+      error.message,
+      error.stack,
+    ]);
+  }
+};
+
+const leetCodeProfileFetcher = asyncHandler(async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      throw new ApiError(400, "Invalid or missing User ID");
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
+    if (!user.leetcode) {
+      throw new ApiError(400, "LeetCode username not set for this user");
+    }
+
+    const profileData = await scrapeLeetcodeProfile(user.leetcode);
+    if (!profileData) {
+      throw new ApiError(500, "Failed to fetch LeetCode profile data");
+    }
+
+    user.leetCodeData = user.leetCodeData || {};
+
+    try {
+      user.leetCodeData.languageUsage = new Map();
+      const languageProblemCount =
+        profileData.languageStats?.matchedUser?.languageProblemCount;
+
+      if (Array.isArray(languageProblemCount)) {
+        languageProblemCount.forEach(({ languageName, problemsSolved }) => {
+          if (languageName && typeof problemsSolved === "number") {
+            user.leetCodeData.languageUsage.set(languageName, problemsSolved);
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error processing language stats:", error);
+    }
+
+    try {
+      user.leetCodeData.skillStats = new Map();
+      const topicProblemCounts =
+        profileData.skillStats?.matchedUser?.tagProblemCounts?.advanced;
+
+      if (Array.isArray(topicProblemCounts)) {
+        topicProblemCounts.forEach(({ tagName, problemsSolved }) => {
+          if (tagName && typeof problemsSolved === "number") {
+            user.leetCodeData.skillStats.set(tagName, problemsSolved);
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error processing skill stats:", error);
+    }
+
+    const userCalendar =
+      profileData.userProfileCalendar?.matchedUser?.userCalendar;
+    if (userCalendar) {
+      user.leetCodeData.submissionStats = {
+        activeDays: userCalendar.totalActiveDays || 0,
+        maxStreak: userCalendar.streak || 0,
+      };
+    }
+
+    const submitStatsGlobal =
+      profileData.userProblemsSolved?.matchedUser?.submitStatsGlobal
+        ?.acSubmissionNum;
+
+    if (Array.isArray(submitStatsGlobal)) {
+      user.leetCodeData.problemsSolvedStats = {};
+      submitStatsGlobal.forEach(({ difficulty, count }) => {
+        if (difficulty && typeof count === "number") {
+          user.leetCodeData.problemsSolvedStats[difficulty] = count;
+        }
+      });
+    }
+
+    const userContestRankingHistory =
+      profileData.userContestRankingInfo?.userContestRankingHistory;
+
+    if (Array.isArray(userContestRankingHistory)) {
+      user.leetCodeData.ratingHistory = userContestRankingHistory
+        .map((entry) => entry.rating)
+        .filter((rating) => typeof rating === "number");
+    }
+
+    await user.save();
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, { user }, "User profile extracted successfully")
+      );
+  } catch (error) {
+    console.error("Profile fetcher error:", error);
+
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json(error);
+    }
+
+    return res
+      .status(500)
+      .json(new ApiError(500, "Internal server error", [error.message]));
+  }
+});
+
+const githubProfileFetcher = asyncHandler(async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      throw new ApiError(400, "Invalid or missing User ID");
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
+    if (!user.github) {
+      throw new ApiError(400, "GitHub username not set for this user");
+    }
+
+    // Fetch GitHub profile data
+    const userUrl = `https://api.github.com/users/${user.github}`;
+    const reposUrl = `https://api.github.com/users/${user.github}/repos`;
+
+    // Fetch user data and repositories in parallel
+    const [userData, reposData] = await Promise.all([
+      fetch(userUrl).then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch user data");
+        return res.json();
+      }),
+      fetch(reposUrl).then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch repos data");
+        return res.json();
+      }),
+    ]);
+
+    // Initialize GitHub data if it doesn't exist
+    if (!user.gitHubData) {
+      user.gitHubData = {};
+    }
+    const languageCount = new Map();
+    var totalRepositories = 0;
+    // Calculate language distribution
+    for (const repo of reposData) {
+      if (repo.language) {
+        totalRepositories = totalRepositories + 1; // Increment total repository count
+        languageCount.set(
+          repo.language,
+          (languageCount.get(repo.language) || 0) + 1
+        );
+      }
+    }
+
+    // Calculate the percentage for each language
+    const languageDistribution = {};
+    languageCount.forEach((count, language) => {
+      languageDistribution[language] = (count / totalRepositories) * 100; // Calculate percentage
+    });
+
+    // Calculate total stars
+    const totalStars = reposData.reduce(
+      (sum, repo) => sum + repo.stargazers_count,
+      0
+    );
+
+    // Update GitHub data according to schema
+    user.gitHubData = {
+      repositories: reposData.length,
+      stars: totalStars,
+      followers: userData.followers,
+      following: userData.following,
+      languageDistribution: languageDistribution,
+    };
+
+    // Save changes
+    await user.save();
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { user },
+          "GitHub profile data extracted successfully"
+        )
+      );
+  } catch (error) {
+    console.error("GitHub profile fetcher error:", error);
+
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json(error);
+    }
+
+    return res
+      .status(500)
+      .json(new ApiError(500, "Internal server error", [error.message]));
+  }
+});
+export {
+  sendOTP,
+  verifyOTP,
+  updateUserProfile,
+  getUserById,
+  leetCodeProfileFetcher,
+  githubProfileFetcher,
+};

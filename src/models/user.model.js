@@ -1,89 +1,110 @@
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 
-// Define Education schema
-const EducationSchema = new mongoose.Schema({
-  institution: { type: String },
-  degree: { type: String },
-  startYear: { type: String },
-  endYear: { type: String },
+const Schema = mongoose.Schema;
+
+// Submission Stats Schema
+const SubmissionStatsSchema = new Schema({
+  activeDays: { type: Number, required: true },
+  maxStreak: { type: Number, required: true },
 });
 
-// Define Project schema
-const ProjectSchema = new mongoose.Schema({
-  title: { type: String },
-  description: { type: String },
-  technologyUsed: { type: String },
-  projectLink: { type: String },
+// LeetCode Data Schema
+const LeetCodeDataSchema = new Schema({
+  ratingHistory: [{ type: Number }],
+  problemStats: { type: Map, of: Number },
+  languageUsage: { type: Map, of: Number },
+  skillStats: { type: Map, of: Number },
+  submissionStats: { type: SubmissionStatsSchema, required: true },
 });
 
-// Define Experience schema
-const ExperienceSchema = new mongoose.Schema({
-  companyName: { type: String },
-  jobTitle: { type: String },
-  startDate: { type: String },
-  endDate: { type: String },
+// GitHub Data Schema
+const GitHubDataSchema = new Schema({
+  repositories: { type: Number, required: true },
+  stars: { type: Number, required: true },
+  followers: { type: Number, required: true },
+  following: { type: Number, required: true },
+  languageDistribution: { type: Map, of: Number },
 });
 
-// Define Assessment schema
-const AssessmentSchema = new mongoose.Schema({
-  overallScore: { type: Number },
-  date: { type: Date },
-  detailedScores: { type: Map, of: Number },
+// Education Schema
+const EducationSchema = new Schema({
+  institution: { type: String, required: true },
+  degree: { type: String, required: true },
+  startYear: { type: String, required: true },
+  endYear: { type: String, required: true },
 });
 
-// Define User schema
-const UserSchema = new mongoose.Schema({
-  // Personal Information
-  firstName: { type: String },
-  middleName: { type: String },
-  lastName: { type: String },
-  name: { type: String },
-  gender: { type: String },
-  dateOfBirth: { type: String },
-  differentlyAbled: { type: Boolean },
-  location: { type: String },
-
-  // Contact Information
-  email: { type: String, required: true }, // Keep email required
-  phoneNumber: { type: String },
-  socialLinks: { type: Map, of: String },
-
-  // Resume and Profile
-  resume: { type: String },
-  resumeFileName: { type: String },
-  lastUpdatedDate: { type: String },
-  fresher: { type: Boolean },
-  profileHeadline: { type: String },
-  profileSummary: { type: String },
-  careerBreak: { type: Boolean },
-
-  // Skills and Achievements
-  keySkills: [{ type: String }],
-  achievements: [{ type: String }],
-  targetCompanies: [{ type: String }],
-
-  // Education and Experience
-  education: [EducationSchema],
-  experience: [ExperienceSchema],
-  projects: [ProjectSchema],
-
-  // Job Applications
-  appliedJobs: [{ type: mongoose.Schema.Types.ObjectId, ref: "Job" }],
-
-  // Teams
-  joinedTeams: { type: Map, of: String },
-  createdTeams: { type: Map, of: String },
-  teamInvitations: [{ type: mongoose.Schema.Types.ObjectId, ref: "Team" }],
-
-  // Assessments
-  aptitudeAssessments: [AssessmentSchema],
-  mockInterviewAssessments: [AssessmentSchema],
-  communicationAssessments: [AssessmentSchema],
-
-  accessToken: [{ type: String }],
+// Project Schema
+const ProjectSchema = new Schema({
+  title: { type: String, required: true },
+  description: { type: String, required: true },
+  technologyUsed: { type: String, required: true },
+  projectLink: { type: String, required: true },
 });
 
+// Experience Schema
+const ExperienceSchema = new Schema({
+  companyName: { type: String, required: true },
+  jobTitle: { type: String, required: true },
+  startDate: { type: String, required: true },
+  endDate: { type: String, required: true },
+});
+
+// Assessment Base Schema
+const AssessmentSchema = new Schema(
+  {
+    overallScore: { type: Number, required: true },
+    date: { type: Date, required: true },
+    detailedScores: { type: Map, of: Number },
+  },
+  { discriminatorKey: "assessmentType" }
+);
+
+const UserSchema = new Schema(
+  {
+    firstName: String,
+    middleName: String,
+    lastName: String,
+    name: String,
+    gender: String,
+    dateOfBirth: String,
+    differentlyAbled: Boolean,
+    location: String,
+    email: { type: String, required: true, unique: true },
+    phoneNumber: String,
+    lastUpdatedDate: String,
+    fresher: Boolean,
+    profileHeadline: String,
+    profileSummary: String,
+    careerBreak: Boolean,
+    keySkills: [String],
+    achievements: [String],
+    targetCompanies: [String],
+    education: [EducationSchema],
+    experience: [ExperienceSchema],
+    projects: [ProjectSchema],
+    appliedJobs: [{ type: Schema.Types.ObjectId, ref: "Job" }],
+    joinedTeams: { type: Map, of: String },
+    createdTeams: { type: Map, of: String },
+    teamInvitations: [{ type: Schema.Types.ObjectId, ref: "Team" }],
+    aptitudeAssessments: [AssessmentSchema],
+    mockInterviewAssessments: [AssessmentSchema],
+    communicationAssessments: [AssessmentSchema],
+    gitHubData: GitHubDataSchema,
+    leetCodeData: LeetCodeDataSchema,
+    linkedin: String,
+    leetcode: String,
+    github: String,
+    portfolio: String,
+    accessToken: { type: String }, // Ensure this is defined as a String
+  },
+  {
+    timestamps: true,
+  }
+);
+
+// Method to generate access tokens
 UserSchema.methods.generateAccessToken = function () {
   return jwt.sign(
     {
@@ -98,4 +119,5 @@ UserSchema.methods.generateAccessToken = function () {
   );
 };
 
+// Export User model
 export const User = mongoose.model("User", UserSchema);

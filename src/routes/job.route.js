@@ -1,18 +1,20 @@
 import { Router } from "express";
 import {
   uploadJobs,
-  applyJob,
+  applyJobs,
   searchJobs,
-  getJobsForUser,
-  getJob,
+  recommendedJobs,
+  youMightLikeJobs,
+  getAppliedJobs,
 } from "../controllers/job.controller.js";
 
 const jobRouter = Router();
 
-jobRouter.route("/upload-job").post(uploadJobs);
-jobRouter.route("/apply-job").post(applyJob);
-jobRouter.route("/search-job").get(searchJobs);
-jobRouter.route("/get-job-for-user").get(getJobsForUser);
-jobRouter.route("/get-job").get(getJob);
+jobRouter.post("/upload", uploadJobs);
+jobRouter.post("/apply", applyJobs);
+jobRouter.post("/applied", getAppliedJobs);
+jobRouter.post("/search", searchJobs);
+jobRouter.post("/recommended", recommendedJobs);
+jobRouter.post("/you-might-like", youMightLikeJobs);
 
 export default jobRouter;

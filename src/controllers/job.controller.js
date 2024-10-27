@@ -4,50 +4,119 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { Job } from "../models/job.model.js";
 import { User } from "../models/user.model.js";
 
-const uploadJobs = asyncHandler(async (req, res) => {
-  const jobsData = req.body; // assuming an array of jobs is sent in the request body
+// Validate job data before insertion
+const validateJobData = (jobData) => {
+  const requiredFields = [
+    "role",
+    "companyName",
+    "location",
+    "jobType",
+    "requiredSkills",
+  ];
+  const missingFields = requiredFields.filter((field) => !jobData[field]);
 
-  // Insert the jobs into the database
-  const createdJobs = await Job.insertMany(jobsData);
+  if (missingFields.length > 0) {
+    throw new ApiError(
+      400,
+      `Missing required fields: ${missingFields.join(", ")}`
+    );
+  }
+};
+
+const uploadJobs = asyncHandler(async (req, res) => {
+  const jobsData = req.body;
+
+  // Validate each job in the array
+  if (!Array.isArray(jobsData)) {
+    throw new ApiError(400, "Jobs data must be an array");
+  }
+
+  jobsData.forEach(validateJobData);
+
+  // Add posting date and initialize applicants array
+  const enrichedJobsData = jobsData.map((job) => ({
+    ...job,
+    postingDate: new Date(),
+    applicants: [],
+  }));
+
+  const createdJobs = await Job.insertMany(enrichedJobsData);
 
   return res
     .status(201)
     .json(new ApiResponse(201, createdJobs, "Jobs uploaded successfully"));
 });
 
-const applyJob = asyncHandler(async (req, res) => {
+const applyJobs = asyncHandler(async (req, res) => {
   const { jobId, userId } = req.body;
 
   const job = await Job.findById(jobId);
   if (!job) {
-    return new ApiError(404, "Job not found");
+    throw new ApiError(404, "Job not found");
   }
 
   if (job.applicants.includes(userId)) {
-    return new ApiError(400, "You have already applied to this job");
+    throw new ApiError(400, "You have already applied to this job");
   }
 
-  // Add user to job applicants
-  job.applicants.push(userId);
-  await job.save();
+  const [updatedJob, updatedUser] = await Promise.all([
+    Job.findByIdAndUpdate(
+      jobId,
+      { $push: { applicants: userId } },
+      { new: true }
+    ),
+    User.findByIdAndUpdate(
+      userId,
+      { $push: { appliedJobs: jobId } },
+      { new: true }
+    ),
+  ]);
 
-  // Add company to user's applied companies
-  const user = await User.findById(userId);
-  if (!user.appliedJobs.includes(jobId)) {
-    user.appliedJobs.push(jobId);
-    await user.save();
+  return res
+    .status(200)
+    .json(new ApiResponse(200, updatedJob, "Successfully applied to job"));
+});
+
+const getAppliedJobs = asyncHandler(async (req, res) => {
+  const { userId } = req.body;
+
+  const user = await User.findById(userId).populate({
+    path: "appliedJobs",
+    options: {
+      sort: { postingDate: -1 },
+    },
+  });
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
   }
 
   return res
     .status(200)
-    .json(new ApiResponse(200, job, "Successfully applied to job"));
+    .json(
+      new ApiResponse(
+        200,
+        user.appliedJobs,
+        "Applied jobs retrieved successfully"
+      )
+    );
 });
 
 const searchJobs = asyncHandler(async (req, res) => {
-  const { role, keySkills, companyName, location, jobType } = req.query;
+  const {
+    role,
+    keySkills,
+    companyName,
+    location,
+    jobType,
+    sortBy = "postingDate",
+    order = "desc",
+    experienceRange,
+  } = req.body;
 
-  const query = {};
+  const query = { isExpired: { $ne: true } };
 
+  // Build search query
   if (role) {
     const roles = Array.isArray(role) ? role : [role];
     query.role = { $in: roles.map((r) => new RegExp(r, "i")) };
@@ -73,69 +142,89 @@ const searchJobs = asyncHandler(async (req, res) => {
     query.requiredSkills = { $in: requiredSkills };
   }
 
-  const jobs = await Job.find(query)
-    .sort({ postingDate: -1 }) 
-    .select("-applicants"); 
+  if (experienceRange) {
+    query.experienceRequired = experienceRange;
+  }
 
-  // Return the jobs in response
+  const jobs = await Job.find(query)
+    .sort({ [sortBy]: order === "desc" ? -1 : 1 })
+    .select("-applicants");
+
   return res
     .status(200)
     .json(new ApiResponse(200, jobs, "Jobs retrieved successfully"));
 });
 
-const getJobsForUser = asyncHandler(async (req, res) => {
-  const userId = req.user._id; // Assuming user is authenticated
-  const user = await User.findById(userId);
+const recommendedJobs = asyncHandler(async (req, res) => {
+  // const { userId } = req.body;
 
-  if (!user) {
-    return new ApiError(404, "User not found");
-  }
+  // const user = await User.findById(userId);
+  // if (!user) {
+  //   throw new ApiError(404, "User not found");
+  // }
 
-  // Build query based on user's profile
-  const query = {
-    $or: [
-      // Match based on user's key skills
-      { requiredSkills: { $in: user.keySkills || [] } },
-      // Match based on user's recommended job roles
-      { role: { $in: user.recommendedJobRoles || [] } },
-      // Match based on user's location
-      { location: user.location },
-    ],
-  };
+  // const query = {
+  //   isExpired: { $ne: true },
+  //   $or: [
+  //     { requiredSkills: { $in: user.keySkills || [] } },
+  //     { location: user.location },
+  //     { role: { $regex: user.profileHeadline || "", $options: "i" } },
+  //   ],
+  // };
 
-  // If user is a fresher, exclude jobs requiring experience
-  if (user.fresher) {
-    query.experience = { $in: ["0-1 years", "Fresher", null] };
-  }
+  // if (user.fresher) {
+  //   query.experienceRequired = { $in: ["0-1 years", "Fresher", null] };
+  // }
 
-  const recommendedJobs = await Job.find(query)
-    .sort({ postingDate: -1 })
-    .limit(20)
-    .select("-applicants"); // Exclude applicants list for privacy
-
+  // const jobs = await Job.find(query)
+  //   .sort({ postingDate: -1 })
+  //   .select("-applicants");
+  const jobs = await Job.find();
   return res
     .status(200)
     .json(
-      new ApiResponse(
-        200,
-        recommendedJobs,
-        "Recommended jobs retrieved successfully"
-      )
+      new ApiResponse(200, jobs, "Recommended jobs retrieved successfully")
     );
 });
-const getJob = asyncHandler(async (req, res) => {
-  try {
-    // Retrieve all job entries from the database
-    const jobs = await Job.find();
 
-    return res
-      .status(200)
-      .json(new ApiResponse(200, jobs, "All jobs retrieved successfully"));
-  } catch (error) {
-    return res
-      .status(500)
-      .json(new ApiResponse(500, null, "Failed to retrieve jobs"));
-  }
+const youMightLikeJobs = asyncHandler(async (req, res) => {
+  // const { userId } = req.body;
+
+  // const user = await User.findById(userId);
+  // if (!user) {
+  //   throw new ApiError(404, "User not found");
+  // }
+
+  // const appliedJobs = await Job.find({ _id: { $in: user.appliedJobs } });
+
+  // const commonSkills = [
+  //   ...new Set(appliedJobs.flatMap((job) => job.requiredSkills)),
+  // ];
+  // const commonRoles = [...new Set(appliedJobs.map((job) => job.role))];
+
+  // const query = {
+  //   isExpired: { $ne: true },
+  //   _id: { $nin: user.appliedJobs }, // Exclude already applied jobs
+  //   $or: [
+  //     { requiredSkills: { $in: commonSkills } },
+  //     { role: { $in: commonRoles } },
+  //   ],
+  // };
+
+  // const jobs = await Job.find(query)
+  //   .sort({ postingDate: -1 })
+  //   .select("-applicants");
+  const jobs = await Job.find();
+  return res
+    .status(200)
+    .json(new ApiResponse(200, jobs, "Similar jobs retrieved successfully"));
 });
 
-export { uploadJobs, applyJob, searchJobs, getJobsForUser, getJob };
+export {
+  uploadJobs,
+  applyJobs,
+  getAppliedJobs,
+  searchJobs,
+  recommendedJobs,
+  youMightLikeJobs,
+};
