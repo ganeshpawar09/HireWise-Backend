@@ -245,11 +245,11 @@ const scrapeLeetcodeProfile = async (username) => {
       }
     );
 
-    // console.log("Response status:", response.status); // Debug log
+    console.log("Response status:", response.status); // Debug log
 
     if (!response.ok) {
       const errorText = await response.text();
-      // console.error("Error response:", errorText); // Debug log
+      console.error("Error response:", errorText); // Debug log
       throw new Error(`Failed to fetch LeetCode profile: ${errorText}`);
     }
 

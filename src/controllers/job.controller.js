@@ -103,52 +103,53 @@ const getAppliedJobs = asyncHandler(async (req, res) => {
 });
 
 const searchJobs = asyncHandler(async (req, res) => {
-  const {
-    role,
-    keySkills,
-    companyName,
-    location,
-    jobType,
-    sortBy = "postingDate",
-    order = "desc",
-    experienceRange,
-  } = req.body;
+  // const {
+  //   role,
+  //   keySkills,
+  //   companyName,
+  //   location,
+  //   jobType,
+  //   sortBy = "postingDate",
+  //   order = "desc",
+  //   experienceRange,
+  // } = req.body;
 
-  const query = { isExpired: { $ne: true } };
+  // const query = { isExpired: { $ne: true } };
 
-  // Build search query
-  if (role) {
-    const roles = Array.isArray(role) ? role : [role];
-    query.role = { $in: roles.map((r) => new RegExp(r, "i")) };
-  }
+  // // Build search query
+  // if (role) {
+  //   const roles = Array.isArray(role) ? role : [role];
+  //   query.role = { $in: roles.map((r) => new RegExp(r, "i")) };
+  // }
 
-  if (location) {
-    const locations = Array.isArray(location) ? location : [location];
-    query.location = { $in: locations.map((loc) => new RegExp(loc, "i")) };
-  }
+  // if (location) {
+  //   const locations = Array.isArray(location) ? location : [location];
+  //   query.location = { $in: locations.map((loc) => new RegExp(loc, "i")) };
+  // }
 
-  if (jobType) {
-    const jobTypes = Array.isArray(jobType) ? jobType : [jobType];
-    query.jobType = { $in: jobTypes };
-  }
+  // if (jobType) {
+  //   const jobTypes = Array.isArray(jobType) ? jobType : [jobType];
+  //   query.jobType = { $in: jobTypes };
+  // }
 
-  if (companyName) {
-    const companies = Array.isArray(companyName) ? companyName : [companyName];
-    query.companyName = { $in: companies.map((name) => new RegExp(name, "i")) };
-  }
+  // if (companyName) {
+  //   const companies = Array.isArray(companyName) ? companyName : [companyName];
+  //   query.companyName = { $in: companies.map((name) => new RegExp(name, "i")) };
+  // }
 
-  if (keySkills) {
-    const requiredSkills = Array.isArray(keySkills) ? keySkills : [keySkills];
-    query.requiredSkills = { $in: requiredSkills };
-  }
+  // if (keySkills) {
+  //   const requiredSkills = Array.isArray(keySkills) ? keySkills : [keySkills];
+  //   query.requiredSkills = { $in: requiredSkills };
+  // }
 
-  if (experienceRange) {
-    query.experienceRequired = experienceRange;
-  }
+  // if (experienceRange) {
+  //   query.experienceRequired = experienceRange;
+  // }
 
-  const jobs = await Job.find(query)
-    .sort({ [sortBy]: order === "desc" ? -1 : 1 })
-    .select("-applicants");
+  // const jobs = await Job.find(query)
+  //   .sort({ [sortBy]: order === "desc" ? -1 : 1 })
+  //   .select("-applicants");
+  const jobs = await Job.find();
 
   return res
     .status(200)

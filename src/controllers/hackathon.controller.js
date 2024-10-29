@@ -1,465 +1,329 @@
-import { Hackathon, Team } from "../models/hackathon.model.js";
+import { Hackathon, Team, TeamUser, Chat } from "../models/hackathon.model.js";
 import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import mongoose from "mongoose";
 
 const uploadHackathon = asyncHandler(async (req, res) => {
-  const hackathonData = req.body; // assuming an array of jobs is sent in the request body
+  const hackathonData = req.body;
 
-  const uploadHackathon = await Hackathon.insertMany(hackathonData);
+  try {
+    const uploadedHackathon = await Hackathon.create(hackathonData);
 
-  return res
-    .status(201)
-    .json(new ApiResponse(201, uploadHackathon, "Jobs uploaded successfully"));
+    return res
+      .status(201)
+      .json(
+        new ApiResponse(
+          201,
+          uploadedHackathon,
+          "Hackathon uploaded successfully"
+        )
+      );
+  } catch (error) {
+    throw new ApiError(500, "Error uploading hackathon: " + error.message);
+  }
 });
-
 const createTeam = asyncHandler(async (req, res) => {
-  const { teamLeader, hackathonId, teamName, maxMembers, requiredSkills } =
-    req.body;
-
-  if (!teamLeader) {
-    return new ApiError(401, "Authentication required");
-  }
-
-  if (!teamName || !maxMembers) {
-    return new ApiError(400, "Team name and maximum members are required");
-  }
-
-  // Check if hackathon exists
-  const hackathon = await Hackathon.findById(hackathonId);
-  if (!hackathon) {
-    return new ApiError(404, "Hackathon not found");
-  }
-
-  // Check if user is already in a team for this hackathon
-  const existingTeam = await Team.findOne({
+  const {
+    userId,
+    problemStatement,
     hackathonId,
-    members: teamLeader,
-  });
-
-  if (existingTeam) {
-    return new ApiError(
-      400,
-      "You are already part of a team in this hackathon"
-    );
-  }
-
-  // Create team
-  const team = await Team.create({
     teamName,
-    hackathonId,
     maxMembers,
     requiredSkills,
-    teamLeader,
-    members: [teamLeader], // Add team leader as first member
-  });
+  } = req.body;
 
-  // Update hackathon with new team
-  await Hackathon.findByIdAndUpdate(
-    hackathonId,
-    {
-      $push: { teams: team._id },
-    },
-    { new: true }
-  );
-
-  return res
-    .status(201)
-    .json(new ApiResponse(201, team, "Team created successfully"));
-});
-
-const requestToJoinTeam = asyncHandler(async (req, res) => {
-  const { teamId, userId } = req.body;
-
-  if (!userId) {
-    return new ApiError(401, "Authentication required");
-  }
-
-  const team = await Team.findById(teamId);
-  if (!team) {
-    return new ApiError(404, "Team not found");
-  }
-
-  // Check if user is already a member
-  if (team.members.includes(userId)) {
-    return new ApiError(400, "You are already a member of this team");
-  }
-
-  // Check if user has already requested to join
-  if (team.joiningRequests.includes(userId)) {
-    return new ApiError(400, "You have already requested to join this team");
-  }
-
-  // Check if team is full
-  if (team.members.length >= team.maxMembers) {
-    return new ApiError(400, "Team is already full");
-  }
-
-  // Add join request
-  const updatedTeam = await Team.findByIdAndUpdate(
-    teamId,
-    {
-      $push: { joiningRequests: userId },
-    },
-    { new: true }
-  );
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, updatedTeam, "Join request sent successfully"));
-});
-
-const addMemberToTeam = asyncHandler(async (req, res) => {
-  const { teamLeaderId, teamId, userId } = req.body;
-
-  if (!teamLeaderId) {
-    return new ApiError(401, "Authentication required");
-  }
-
-  const team = await Team.findById(teamId);
-  if (!team) {
-    return new ApiError(404, "Team not found");
-  }
-
-  // Verify that the requester is the team leader
-  if (team.teamLeader.toString() !== teamLeaderId.toString()) {
-    return new ApiError(403, "Only team leader can add members");
-  }
-
-  // Check if user has requested to join
-  if (!team.joiningRequests.includes(userId)) {
-    return new ApiError(400, "User has not requested to join this team");
-  }
-
-  // Check if team is full
-  if (team.members.length >= team.maxMembers) {
-    return new ApiError(400, "Team is already full");
-  }
-
-  // Add member and remove from joining requests
-  const updatedTeam = await Team.findByIdAndUpdate(
-    teamId,
-    {
-      $push: { members: userId },
-      $pull: { joiningRequests: userId },
-    },
-    { new: true }
-  );
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, updatedTeam, "Member added successfully"));
-});
-
-const getTeamDetails = asyncHandler(async (req, res) => {
-  const { teamId } = req.body;
-
-  const team = await Team.findById(teamId);
-
-  if (!team) {
-    return new ApiError(404, "Team not found");
-  }
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, team, "Team details fetched successfully"));
-});
-
-const getHackathonTeams = asyncHandler(async (req, res) => {
-  const { hackathonId } = req.body;
-
-  const hackathon = await Hackathon.findById(hackathonId).populate({
-    path: "teams",
-    populate: [
-      { path: "members", select: "firstName lastName email" },
-      { path: "teamLeader", select: "firstName lastName email" },
-    ],
-  });
-
-  if (!hackathon) {
-    return new ApiError(404, "Hackathon not found");
-  }
-
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        hackathon.teams,
-        "Hackathon teams fetched successfully"
-      )
-    );
-});
-
-const sendTeamInvitation = asyncHandler(async (req, res) => {
-  const { teamId, userId } = req.body;
-
-  const team = await Team.findById(teamId);
-  if (!team) {
-    return new ApiError(404, "Team not found");
-  }
-
-  const user = await User.findById(userId);
-  if (!user) {
-    return new ApiError(404, "User not found");
-  }
-
-  // Check if user is already a member
-  if (team.members.includes(userId)) {
-    return new ApiError(400, "User is already a member of this team");
-  }
-
-  // Check if team is full
-  if (team.members.length >= team.maxMembers) {
-    return new ApiError(400, "Team is already full");
-  }
-
-  // Check if invitation already exists
-  const existingInvitation = user.teamInvitations?.find(
-    (invitation) => invitation.teamId.toString() === teamId
-  );
-
-  if (existingInvitation) {
-    return new ApiError(400, "Invitation already sent to this user");
-  }
-
-  // Add invitation to user's teamInvitations
-  await User.findByIdAndUpdate(
-    userId,
-    {
-      $push: {
-        teamInvitations: {
-          teamId: team._id,
-          teamName: team.teamName,
-          hackathonId: team.hackathonId,
-          invitedBy: teamLeaderId,
-          invitedAt: new Date(),
-        },
-      },
-    },
-    { new: true }
-  );
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, null, "Team invitation sent successfully"));
-});
-
-// Accept team invitation
-const acceptTeamInvitation = asyncHandler(async (req, res) => {
-  const { teamId, userId } = req.body;
-
-  if (!userId) {
-    return new ApiError(401, "Authentication required");
-  }
-
-  const user = await User.findById(userId);
-  if (!user) {
-    return new ApiError(404, "User not found");
-  }
-
-  // Check if invitation exists
-  const invitation = user.teamInvitations?.find(
-    (inv) => inv.teamId.toString() === teamId
-  );
-
-  if (!invitation) {
-    return new ApiError(404, "No invitation found for this team");
-  }
-
-  const team = await Team.findById(teamId);
-  if (!team) {
-    return new ApiError(404, "Team not found");
-  }
-
-  // Check if team is full
-  if (team.members.length >= team.maxMembers) {
-    return new ApiError(400, "Team is already full");
-  }
-
-  const session = await mongoose.startSession();
   try {
+    // Convert `userId` and `hackathonId` to ObjectId with 'new'
+    const userIdObject = new mongoose.Types.ObjectId(userId);
+    const hackathonIdObject = new mongoose.Types.ObjectId(hackathonId);
+
+    const user = await User.findById(userIdObject);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ status: "error", message: "User not found" });
+    }
+
+    // Start transaction
+    const session = await mongoose.startSession();
     session.startTransaction();
 
-    // Add user to team members
-    await Team.findByIdAndUpdate(
-      teamId,
-      {
-        $push: { members: userId },
-      },
-      { session }
-    );
-
-    // Remove invitation from user's teamInvitations
-    await User.findByIdAndUpdate(
-      userId,
-      {
-        $pull: {
-          teamInvitations: { teamId: team._id },
-        },
-      },
-      { session }
-    );
-
-    await session.commitTransaction();
-  } catch (error) {
-    await session.abortTransaction();
-    return new ApiError(500, "Error accepting team invitation");
-  } finally {
-    session.endSession();
-  }
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, null, "Team invitation accepted successfully"));
-});
-
-// Reject team invitation
-const rejectTeamInvitation = asyncHandler(async (req, res) => {
-  const { teamId, userId } = req.body;
-
-  if (!userId) {
-    return new ApiError(401, "Authentication required");
-  }
-
-  // Remove invitation from user's teamInvitations
-  await User.findByIdAndUpdate(userId, {
-    $pull: {
-      teamInvitations: { teamId: mongoose.Types.ObjectId(teamId) },
-    },
-  });
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, null, "Team invitation rejected successfully"));
-});
-
-// Remove member from team
-const removeMember = asyncHandler(async (req, res) => {
-  const { teamLeaderId, teamId, memberId } = req.body;
-
-  if (!teamLeaderId) {
-    return new ApiError(401, "Authentication required");
-  }
-
-  const team = await Team.findById(teamId);
-  if (!team) {
-    return new ApiError(404, "Team not found");
-  }
-
-  // Verify that the requester is the team leader
-  if (team.teamLeader.toString() !== teamLeaderId.toString()) {
-    return new ApiError(403, "Only team leader can remove members");
-  }
-
-  // Prevent removing team leader
-  if (memberId === team.teamLeader.toString()) {
-    return new ApiError(400, "Team leader cannot be removed");
-  }
-
-  // Check if user is actually a member
-  if (!team.members.includes(memberId)) {
-    return new ApiError(400, "User is not a member of this team");
-  }
-
-  // Remove member from team
-  const updatedTeam = await Team.findByIdAndUpdate(
-    teamId,
-    {
-      $pull: { members: memberId },
-    },
-    { new: true }
-  );
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, updatedTeam, "Member removed successfully"));
-});
-const leaveTeam = asyncHandler(async (req, res) => {
-  const { teamId, userId } = req.body;
-
-  if (!userId) {
-    return new ApiError(401, "Authentication required");
-  }
-
-  const team = await Team.findById(teamId);
-  if (!team) {
-    return new ApiError(404, "Team not found");
-  }
-
-  // Check if user is actually a member
-  if (!team.members.includes(userId)) {
-    return new ApiError(400, "You are not a member of this team");
-  }
-
-  // If user is team leader, delete the entire team
-  if (team.teamLeader.toString() === userId.toString()) {
-    const session = await mongoose.startSession();
     try {
-      session.startTransaction();
-
-      // Remove team from hackathon's teams array
-      await Hackathon.findByIdAndUpdate(
-        team.hackathonId,
-        {
-          $pull: { teams: teamId },
-        },
-        { session }
-      );
-
-      // Remove team invitations from all users
-      await User.updateMany(
-        { "teamInvitations.teamId": team._id },
-        {
-          $pull: {
-            teamInvitations: { teamId: team._id },
+      // Create team leader with ObjectId conversion
+      const leader = await TeamUser.create(
+        [
+          {
+            userId: userIdObject,
+            name: user.name,
+            keySkills: user.keySkills || [],
           },
-        },
+        ],
         { session }
       );
 
-      // Delete the team
-      await Team.findByIdAndDelete(teamId).session(session);
+      // Create team with ObjectId conversion
+      const team = await Team.create(
+        [
+          {
+            teamName,
+            problemStatement,
+            hackathonId: hackathonIdObject,
+            maxMembers,
+            requiredSkills,
+            teamLeader: leader[0]._id, // Ensure this is an ObjectId
+            members: [leader[0]._id], // Array of ObjectId
+            joiningRequests: [leader[0]._id],
+            chats: [],
+          },
+        ],
+        { session }
+      );
+
+      // Update hackathon and user with new team ID
+      await Hackathon.findByIdAndUpdate(
+        hackathonIdObject,
+        { $push: { teams: team[0]._id } },
+        { session, new: true }
+      );
+
+      await User.findByIdAndUpdate(
+        userIdObject,
+        { $set: { [`createdTeams.${hackathonId}`]: team[0]._id } },
+        { session, new: true }
+      );
 
       await session.commitTransaction();
 
-      return res
-        .status(200)
-        .json(
-          new ApiResponse(200, null, "Team deleted successfully as leader left")
-        );
+      const populatedTeam = await Team.findById(team[0]._id)
+        .populate("teamLeader")
+        .populate("joiningRequests")
+        .populate("members")
+        .lean();
+
+      return res.status(201).json({
+        status: "success",
+        data: populatedTeam,
+        message: "Team created successfully",
+      });
     } catch (error) {
       await session.abortTransaction();
-      return new ApiError(500, "Error deleting team");
+      return res.status(500).json({
+        status: "error",
+        message: error.message || "Error in team creation transaction",
+      });
     } finally {
       session.endSession();
     }
+  } catch (error) {
+    console.error("Create team error:", error);
+    return res.status(500).json({
+      status: "error",
+      message: error.message || "Internal server error",
+    });
   }
+});
 
-  // If not team leader, just remove the member
-  const updatedTeam = await Team.findByIdAndUpdate(
-    teamId,
-    {
-      $pull: { members: userId },
-    },
-    { new: true }
-  );
+const getRegisteredHackathons = asyncHandler(async (req, res) => {
+  const { userId } = req.body;
 
-  return res
-    .status(200)
-    .json(new ApiResponse(200, updatedTeam, "Left team successfully"));
+  try {
+    if (!userId || typeof userId !== "string") {
+      throw new ApiError(400, "Invalid user ID");
+    }
+
+    const user = await User.findById(userId).select("joinedTeams createdTeams");
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
+    const joinedHackathonIds = user.joinedTeams?.keys
+      ? Array.from(user.joinedTeams.keys())
+      : [];
+    const createdHackathonIds = user.createdTeams?.keys
+      ? Array.from(user.createdTeams.keys())
+      : [];
+    const registeredHackathonIds = [
+      ...new Set([...joinedHackathonIds, ...createdHackathonIds]),
+    ];
+
+    const hackathons = await Hackathon.find({
+      _id: { $in: registeredHackathonIds },
+    });
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          hackathons,
+          "Successfully fetched registered hackathons"
+        )
+      );
+  } catch (error) {
+    console.error(error);
+    if (error instanceof ApiError) {
+      throw res.status(error.statusCode).json(error);
+    }
+    throw res.status(500).json(new ApiError(500, "Error fetching hackathons"));
+  }
+});
+
+const getSearchHackathons = asyncHandler(async (req, res) => {
+  const { search } = req.body;
+
+  try {
+    const searchCriteria = {
+      $or: [
+        { location: { $regex: search, $options: "i" } },
+        { hackathonName: { $regex: search, $options: "i" } },
+      ],
+    };
+
+    const hackathons = await Hackathon.find(searchCriteria);
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, hackathons, "Hackathons fetched successfully")
+      );
+  } catch (error) {
+    console.error(error);
+    throw new ApiError(500, "Error searching hackathons: " + error.message);
+  }
+});
+const getYouMightLike = asyncHandler(async (req, res) => {
+  const { userId } = req.body;
+
+  try {
+    const hackathons = await Hackathon.find();
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, hackathons, "Hackathons fetched successfully")
+      );
+  } catch (error) {
+    console.error(error);
+    throw new ApiError(500, "Error searching hackathons: " + error.message);
+  }
+});
+
+const getTeamsForHackathon = asyncHandler(async (req, res) => {
+  const { userId, hackathonId } = req.body;
+
+  try {
+    if (!userId || typeof userId !== "string") {
+      throw new ApiError(400, "Invalid user ID");
+    }
+
+    if (!hackathonId || typeof hackathonId !== "string") {
+      throw new ApiError(400, "Invalid hackathon ID");
+    }
+
+    const user = await User.findById(userId).select("joinedTeams createdTeams");
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
+    let teams = null;
+    let leader = false;
+    let member = false;
+
+    if (user.joinedTeams != null && user.joinedTeams.has(hackathonId)) {
+      teams = await Team.findById(user.joinedTeams.get(hackathonId))
+        .populate("teamLeader")
+        .populate("members")
+        .populate("joiningRequests")
+        .lean();
+      member = true;
+    } else if (
+      user.createdTeams != null &&
+      user.createdTeams.has(hackathonId)
+    ) {
+      teams = await Team.findById(user.createdTeams.get(hackathonId))
+        .populate("teamLeader")
+        .populate("members")
+        .populate("joiningRequests")  
+        .lean();
+      leader = true;
+    }
+
+    if (leader || member) {
+      return res
+        .status(200)
+        .json(
+          new ApiResponse(
+            200,
+            { teams, leader, member },
+            "Successfully fetched teams for hackathon"
+          )
+        );
+    }
+
+    teams = await Team.find({ hackathon: hackathonId })
+      .populate("teamLeader")
+      .populate("members")
+      .lean();
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { teams, leader, member },
+          "Successfully fetched teams for hackathon"
+        )
+      );
+  } catch (error) {
+    console.error(error);
+    if (error instanceof ApiError) {
+      throw res.status(error.statusCode).json(error);
+    }
+    throw res.status(500).json(new ApiError(500, "Error fetching teams"));
+  }
+});
+
+const getSuggestedTeammates = asyncHandler(async (req, res) => {
+  try {
+    const users = await User.find(
+      {},
+      {
+        _id: 1,
+        name: 1,
+        keySkills: 1,
+      }
+    );
+
+    const teamUsers = users.map((user) => ({
+      userId: user._id.toString(),
+      name: user.name,
+      keySkills: user.keySkills,
+    }));
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          teamUsers,
+          "Successfully fetched suggested teammates"
+        )
+      );
+  } catch (error) {
+    throw res
+      .status(500)
+      .json(new ApiError(500, "Error fetching suggested teammates"));
+  }
 });
 
 export {
-  getHackathonTeams,
-  getTeamDetails,
   uploadHackathon,
   createTeam,
-  requestToJoinTeam,
-  addMemberToTeam,
-  sendTeamInvitation,
-  removeMember,
-  rejectTeamInvitation,
-  acceptTeamInvitation,
+  getRegisteredHackathons,
+  getSearchHackathons,
+  getTeamsForHackathon,
+  getYouMightLike,
+  getSuggestedTeammates,
 };

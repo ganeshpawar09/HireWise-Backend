@@ -1,15 +1,42 @@
 import mongoose from "mongoose";
+
 const topicSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  description: { type: String, required: true },
-  learningResources: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "ArticleSource" },
+  dsa: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
+  dbms: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
+  oop: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
+  cn: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
+  os: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
+  verbal: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
+  numberSystem: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
   ],
-  featuredPlaylists: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "VideoPlaylist" },
+  timeSpeedDistance: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
   ],
-  recommendedVideos: [{ type: mongoose.Schema.Types.ObjectId, ref: "Video" }],
-  question: { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+  permutationandcombination: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+  ],
+  probalbility: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+  ],
+  workandtime: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+  ],
+  bloodrelation: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+  ],
+  directionanddistance: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+  ],
+  codinganddecoding: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+  ],
+  seatingandarrangement: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+  ],
+  percentange: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+  ],
 });
 
 export const Topic = mongoose.model("Topic", topicSchema);

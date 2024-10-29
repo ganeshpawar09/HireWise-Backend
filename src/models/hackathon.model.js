@@ -8,14 +8,15 @@ const ChatSchema = new mongoose.Schema({
 // Define Team schema
 const TeamSchema = new mongoose.Schema({
   teamName: { type: String, required: true },
+  problemStatement: { type: String, required: true },
   hackathonId: { type: String, required: true },
-  members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  members: [{ type: mongoose.Schema.Types.ObjectId, ref: "TeamUser" }],
   maxMembers: { type: Number, required: true },
   requiredSkills: [{ type: String, required: true }],
-  joiningRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  joiningRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "TeamUser" }],
   teamLeader: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
+    ref: "TeamUser",
     required: true,
   },
   chats: [ChatSchema],
@@ -41,6 +42,20 @@ const HackathonSchema = new mongoose.Schema({
   imageUrl: { type: String, required: true },
 });
 
+const TeamUserSchema = new mongoose.Schema({
+  userId: {
+    type: String,
+  },
+  name: {
+    type: String,
+  },
+  keySkills: [
+    {
+      type: String,
+    },
+  ],
+});
 export const Chat = mongoose.model("Chat", ChatSchema);
 export const Team = mongoose.model("Team", TeamSchema);
+export const TeamUser = mongoose.model("TeamUser", TeamUserSchema);
 export const Hackathon = mongoose.model("Hackathon", HackathonSchema);
