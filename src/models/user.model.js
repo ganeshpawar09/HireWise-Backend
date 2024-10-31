@@ -88,7 +88,9 @@ const UserSchema = new Schema(
     joinedTeams: { type: Map, of: String },
     createdTeams: { type: Map, of: String },
     teamInvitations: [{ type: Schema.Types.ObjectId, ref: "Team" }],
-    aptitudeAssessments: [AssessmentSchema],
+    aptitudeAssessments: [
+      { type: Schema.Types.ObjectId, ref: "AptitudeTestResult" },
+    ],
     mockInterviewAssessments: [AssessmentSchema],
     communicationAssessments: [AssessmentSchema],
     gitHubData: GitHubDataSchema,

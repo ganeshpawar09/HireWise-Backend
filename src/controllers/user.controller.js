@@ -193,13 +193,68 @@ const verifyOTP = asyncHandler(async (req, res) => {
       new ApiResponse(200, { user, accessToken }, "OTP verified successfully")
     );
 });
-
 const updateUserProfile = asyncHandler(async (req, res) => {
   const { userId, updates } = req.body;
 
-  console.log(userId);
-  console.log(updates);
-  const user = await User.findByIdAndUpdate(userId, updates, { new: true });
+  // Handle aptitude test results if present
+  if (updates.aptitudeAssessments) {
+    try {
+      // Parse the assessments if they're passed as a string
+      const assessments =
+        typeof updates.aptitudeAssessments === "string"
+          ? JSON.parse(updates.aptitudeAssessments)
+          : updates.aptitudeAssessments;
+
+      // Create new test results
+      const savedAssessments = await Promise.all(
+        assessments.map(async (assessment) => {
+          // Convert Map-like objects to actual Maps
+          const topicWiseAnalysis = new Map();
+          for (const [key, value] of Object.entries(
+            assessment.analytics.topicWiseAnalysis
+          )) {
+            const subTopics = new Map();
+            for (const [subKey, subValue] of Object.entries(value.subTopics)) {
+              subTopics.set(subKey, subValue);
+            }
+            value.subTopics = subTopics;
+            topicWiseAnalysis.set(key, value);
+          }
+
+          const testResult = new AptitudeTestResult({
+            analytics: {
+              ...assessment.analytics,
+              topicWiseAnalysis,
+            },
+            timePerQuestion: assessment.timePerQuestion,
+            totalTimeTaken: assessment.totalTimeTaken,
+            date: new Date(assessment.date),
+          });
+
+          return await testResult.save();
+        })
+      );
+
+      // Update the user with references to the new test results
+      updates.aptitudeAssessments = savedAssessments.map(
+        (result) => result._id
+      );
+    } catch (error) {
+      console.error("Error processing aptitude assessments:", error);
+      throw new ApiError(400, "Invalid aptitude assessment data format");
+    }
+  }
+
+  // Update user
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { $set: updates },
+    {
+      new: true,
+      runValidators: true,
+    }
+  ).populate("aptitudeAssessments");
+
   if (!user) {
     throw new ApiError(404, "User not found");
   }

@@ -1,103 +1,86 @@
 import mongoose from "mongoose";
 
-const topicSchema = new mongoose.Schema({
-  dsa: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
-  dbms: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
-  oop: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
-  cn: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
-  os: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
-  verbal: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" }],
-  numberSystem: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
+const questionSchema = new mongoose.Schema({
+  topic: {
+    type: String,
+    required: [true, "Topic is required"],
+    trim: true,
+  },
+  subTopic: {
+    type: String,
+    required: [true, "Subtopic is required"],
+    trim: true,
+  },
+  level: {
+    type: String,
+    enum: {
+      values: ["Easy", "Medium", "Hard"],
+      message: "Level must be either Easy, Medium, or Hard",
+    },
+    required: true,
+  },
+  questionText: {
+    type: String,
+    required: [true, "Question text is required"],
+    trim: true,
+  },
+  options: [
+    {
+      type: String,
+      required: [true, "Options are required"],
+      trim: true,
+    },
   ],
-  timeSpeedDistance: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
-  ],
-  permutationandcombination: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
-  ],
-  probalbility: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
-  ],
-  workandtime: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
-  ],
-  bloodrelation: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
-  ],
-  directionanddistance: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
-  ],
-  codinganddecoding: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
-  ],
-  seatingandarrangement: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
-  ],
-  percentange: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "TopicQuestions" },
-  ],
+  correctOptionIndex: {
+    type: Number,
+    required: true,
+  },
+  explanation: {
+    type: String,
+    trim: true,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
 });
+
+const topicSchema = new mongoose.Schema(
+  {
+    dsa: {
+      type: Map,
+      of: [questionSchema],
+    },
+    dbms: {
+      type: Map,
+      of: [questionSchema],
+    },
+    oop: {
+      type: Map,
+      of: [questionSchema],
+    },
+    cn: {
+      type: Map,
+      of: [questionSchema],
+    },
+    os: {
+      type: Map,
+      of: [questionSchema],
+    },
+    verbal: {
+      type: Map,
+      of: [questionSchema],
+    },
+    quantitative: {
+      type: Map,
+      of: [questionSchema],
+    },
+    logical: {
+      type: Map,
+      of: [questionSchema],
+    },
+  },
+  { timestamps: true }
+);
 
 export const Topic = mongoose.model("Topic", topicSchema);
-
-const articleSourceSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  logoUrl: { type: String, required: true },
-  websiteUrl: { type: String, required: true },
-  description: { type: String },
-});
-
-export const ArticleSource = mongoose.model(
-  "ArticleSource",
-  articleSourceSchema
-);
-
-const videoPlaylistSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  channelName: { type: String, required: true },
-  thumbnailUrl: { type: String },
-  videoCount: { type: Number, required: true },
-  websiteUrl: { type: String },
-});
-
-export const VideoPlaylist = mongoose.model(
-  "VideoPlaylist",
-  videoPlaylistSchema
-);
-
-const videoSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  channelName: { type: String, required: true },
-  thumbnailUrl: { type: String },
-  websiteUrl: { type: String, required: true },
-  duration: { type: String },
-  views: { type: Number },
-  publishedDate: { type: Date },
-  description: { type: String },
-});
-
-export const Video = mongoose.model("Video", videoSchema);
-
-const topicQuestionsSchema = new mongoose.Schema({
-  easyQuestions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Question" }],
-  mediumQuestions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Question" }],
-  hardQuestions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Question" }],
-  extremeHardQuestions: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "Question" },
-  ],
-});
-
-export const TopicQuestions = mongoose.model(
-  "TopicQuestions",
-  topicQuestionsSchema
-);
-
-const questionSchema = new mongoose.Schema({
-  questionText: { type: String, required: true },
-  options: [{ type: String, required: true }],
-  correctOptionIndex: { type: Number, required: true },
-  explanation: { type: String },
-});
-
-export const Question = mongoose.model("Question", questionSchema);
