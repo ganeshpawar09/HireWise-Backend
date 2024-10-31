@@ -3,9 +3,9 @@ import { Otp } from "../models/otp.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import AptitudeTestResult from "../models/aptitude_result.model.js";
 import nodemailer from "nodemailer";
 import otpGenerator from "otp-generator";
-import axios from "axios";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -173,7 +173,7 @@ const verifyOTP = asyncHandler(async (req, res) => {
   }
 
   // Find the user by email
-  let user = await User.findOne({ email });
+  let user = await User.findOne({ email }).populate("aptitudeAssessments");
 
   // If user does not exist, create a new user
   if (!user) {
@@ -196,29 +196,38 @@ const verifyOTP = asyncHandler(async (req, res) => {
 const updateUserProfile = asyncHandler(async (req, res) => {
   const { userId, updates } = req.body;
 
-  // Handle aptitude test results if present
-  if (updates.aptitudeAssessments) {
-    try {
-      // Parse the assessments if they're passed as a string
-      const assessments =
-        typeof updates.aptitudeAssessments === "string"
-          ? JSON.parse(updates.aptitudeAssessments)
-          : updates.aptitudeAssessments;
+  // Validate input
+  if (!userId) {
+    throw new ApiError(400, "User ID is required");
+  }
 
-      // Create new test results
+  // Handle aptitude test results specifically
+  if (updates.aptitudeAssessments && updates.aptitudeAssessments.length > 0) {
+    try {
       const savedAssessments = await Promise.all(
-        assessments.map(async (assessment) => {
-          // Convert Map-like objects to actual Maps
+        updates.aptitudeAssessments.map(async (assessment) => {
+          // Convert nested objects to Maps
           const topicWiseAnalysis = new Map();
-          for (const [key, value] of Object.entries(
-            assessment.analytics.topicWiseAnalysis
-          )) {
-            const subTopics = new Map();
-            for (const [subKey, subValue] of Object.entries(value.subTopics)) {
-              subTopics.set(subKey, subValue);
+
+          if (assessment.analytics && assessment.analytics.topicWiseAnalysis) {
+            for (const [topicKey, topicValue] of Object.entries(
+              assessment.analytics.topicWiseAnalysis
+            )) {
+              const subTopics = new Map();
+
+              if (topicValue.subTopics) {
+                for (const [subTopicKey, subTopicValue] of Object.entries(
+                  topicValue.subTopics
+                )) {
+                  subTopics.set(subTopicKey, subTopicValue);
+                }
+              }
+
+              topicWiseAnalysis.set(topicKey, {
+                ...topicValue,
+                subTopics,
+              });
             }
-            value.subTopics = subTopics;
-            topicWiseAnalysis.set(key, value);
           }
 
           const testResult = new AptitudeTestResult({
@@ -228,24 +237,28 @@ const updateUserProfile = asyncHandler(async (req, res) => {
             },
             timePerQuestion: assessment.timePerQuestion,
             totalTimeTaken: assessment.totalTimeTaken,
-            date: new Date(assessment.date),
+            date: new Date(assessment.date || Date.now()),
+            user: userId,
           });
 
           return await testResult.save();
         })
       );
 
-      // Update the user with references to the new test results
+      // Update updates to reference new test result IDs
       updates.aptitudeAssessments = savedAssessments.map(
         (result) => result._id
       );
     } catch (error) {
-      console.error("Error processing aptitude assessments:", error);
-      throw new ApiError(400, "Invalid aptitude assessment data format");
+      console.error("Aptitude assessment processing error:", error);
+      throw new ApiError(
+        400,
+        `Invalid aptitude assessment data: ${error.message}`
+      );
     }
   }
 
-  // Update user
+  // Update user profile
   const user = await User.findByIdAndUpdate(
     userId,
     { $set: updates },
