@@ -284,7 +284,7 @@ const getUserById = asyncHandler(async (req, res) => {
     throw new ApiError(400, "User ID is required");
   }
 
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).populate("aptitudeAssessments");
 
   if (!user) {
     throw new ApiError(404, "User not found");

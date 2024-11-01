@@ -1,12 +1,25 @@
-import { app } from "./app.js";
+import { server } from "./app.js";
 import connectDB from "./db/index.js";
 import dotenv from "dotenv";
 dotenv.config({
   path: "C:/Users/gapaw/Desktop/hirewise backend/.env",
 });
 
-connectDB().then(() => {
-  app.listen(process.env.PORT || 8000, () => {
-    console.log(`Server is listening on port ${process.env.PORT || 8000}`);
-  });
-});
+const startServer = async () => {
+  try {
+    await connectDB();
+
+    const PORT = process.env.PORT || 3000;
+    server.listen(PORT, () => {
+      console.log(
+        `Server is running in ${process.env.NODE_ENV || "development"} mode`
+      );
+      console.log(`Listening on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Failed to start server:", error);
+    process.exit(1);
+  }
+};
+
+startServer();

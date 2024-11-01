@@ -245,7 +245,7 @@ const getTeamsForHackathon = asyncHandler(async (req, res) => {
       teams = await Team.findById(user.createdTeams.get(hackathonId))
         .populate("teamLeader")
         .populate("members")
-        .populate("joiningRequests")  
+        .populate("joiningRequests")
         .lean();
       leader = true;
     }
@@ -262,9 +262,10 @@ const getTeamsForHackathon = asyncHandler(async (req, res) => {
         );
     }
 
-    teams = await Team.find({ hackathon: hackathonId })
+    teams = await Team.find({ hackathonId: hackathonId })
       .populate("teamLeader")
       .populate("members")
+      .populate("joiningRequests")
       .lean();
 
     return res
