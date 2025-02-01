@@ -85,9 +85,6 @@ const UserSchema = new Schema(
     experience: [ExperienceSchema],
     projects: [ProjectSchema],
     appliedJobs: [{ type: Schema.Types.ObjectId, ref: "Job" }],
-    joinedTeams: { type: Map, of: String },
-    createdTeams: { type: Map, of: String },
-    teamInvitations: [{ type: Schema.Types.ObjectId, ref: "Team" }],
     aptitudeAssessments: [
       { type: Schema.Types.ObjectId, ref: "AptitudeTestResult" },
     ],
