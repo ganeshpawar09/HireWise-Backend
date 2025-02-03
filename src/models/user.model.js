@@ -51,16 +51,6 @@ const ExperienceSchema = new Schema({
   endDate: { type: String, required: true },
 });
 
-// Assessment Base Schema
-const AssessmentSchema = new Schema(
-  {
-    overallScore: { type: Number, required: true },
-    date: { type: Date, required: true },
-    detailedScores: { type: Map, of: Number },
-  },
-  { discriminatorKey: "assessmentType" }
-);
-
 const UserSchema = new Schema(
   {
     firstName: String,
@@ -80,7 +70,6 @@ const UserSchema = new Schema(
     careerBreak: Boolean,
     keySkills: [String],
     achievements: [String],
-    targetCompanies: [String],
     education: [EducationSchema],
     experience: [ExperienceSchema],
     projects: [ProjectSchema],
@@ -88,22 +77,28 @@ const UserSchema = new Schema(
     aptitudeAssessments: [
       { type: Schema.Types.ObjectId, ref: "AptitudeTestResult" },
     ],
-    mockInterviewAssessments: [AssessmentSchema],
-    communicationAssessments: [AssessmentSchema],
     gitHubData: GitHubDataSchema,
     leetCodeData: LeetCodeDataSchema,
     linkedin: String,
     leetcode: String,
     github: String,
     portfolio: String,
-    accessToken: { type: String }, // Ensure this is defined as a String
+    accessToken: { type: String },
+    appliedJobs: [{ type: Schema.Types.ObjectId, ref: "Job" }],
+    notInterestedJobs: [{ type: Schema.Types.ObjectId, ref: "Job" }],
+    embedding: { type: [Number], default: [] },
+    clusters: [
+      {
+        clusterId: { type: mongoose.Schema.Types.ObjectId, ref: "Cluster" },
+        percentage: { type: Number },
+      },
+    ],
   },
   {
     timestamps: true,
   }
 );
 
-// Method to generate access tokens
 UserSchema.methods.generateAccessToken = function () {
   return jwt.sign(
     {

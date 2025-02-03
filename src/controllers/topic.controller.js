@@ -21,10 +21,14 @@ const addQuestionsByTopic = asyncHandler(async (req, res, next) => {
       typeof topicsData !== "object" ||
       Object.keys(topicsData).length === 0
     ) {
-      throw new ApiError(
-        400,
-        "Invalid input: Please provide a valid topics data structure."
-      );
+      return res
+        .status(400)
+        .json(
+          new ApiError(
+            400,
+            "Invalid input: Please provide a valid topics data structure."
+          )
+        );
     }
 
     // Get or create the topic document
@@ -34,7 +38,9 @@ const addQuestionsByTopic = asyncHandler(async (req, res, next) => {
     for (const [mainTopic, subTopicsData] of Object.entries(topicsData)) {
       // Validate main topic exists in schema
       if (!topicDoc.schema.paths[mainTopic]) {
-        throw new ApiError(400, `Invalid main topic: ${mainTopic}`);
+        return res
+          .status(400)
+          .json(new ApiError(400, `Invalid main topic: ${mainTopic}`));
       }
 
       // Initialize the Map if it doesn't exist
@@ -45,10 +51,14 @@ const addQuestionsByTopic = asyncHandler(async (req, res, next) => {
       // Process each subtopic
       for (const [subTopicName, questions] of Object.entries(subTopicsData)) {
         if (!Array.isArray(questions)) {
-          throw new ApiError(
-            400,
-            `Questions for subtopic "${subTopicName}" must be an array`
-          );
+          return res
+            .status(400)
+            .json(
+              new ApiError(
+                400,
+                `Questions for subtopic "${subTopicName}" must be an array`
+              )
+            );
         }
 
         const processedQuestions = questions.map((question) => {
@@ -58,10 +68,14 @@ const addQuestionsByTopic = asyncHandler(async (req, res, next) => {
             question.options.length === 0 ||
             typeof question.correctOptionIndex !== "number"
           ) {
-            throw new ApiError(
-              400,
-              `Invalid question structure in subtopic "${subTopicName}"`
-            );
+            return res
+              .status(400)
+              .json(
+                new ApiError(
+                  400,
+                  `Invalid question structure in subtopic "${subTopicName}"`
+                )
+              );
           }
 
           // Shuffle options
@@ -92,13 +106,15 @@ const addQuestionsByTopic = asyncHandler(async (req, res, next) => {
       .json(new ApiResponse(201, "done", "Questions added successfully."));
   } catch (error) {
     if (error instanceof ApiError) {
-      throw error;
+      return res.status(error.statusCode).json(error);
     }
     if (error.name === "ValidationError") {
-      throw new ApiError(400, error.message);
+      return res.status(400).json(new ApiError(400, error.message));
     }
     console.error("Error in addQuestionsByTopic:", error);
-    throw new ApiError(500, "Error processing questions");
+    return res
+      .status(500)
+      .json(new ApiError(500, "Error processing questions"));
   }
 });
 
@@ -140,7 +156,9 @@ const getTopicsStructure = asyncHandler(async (req, res) => {
       );
   } catch (error) {
     console.error("Error in getTopicsStructure:", error);
-    throw new ApiError(500, "Error retrieving topics structure");
+    return res
+      .status(500)
+      .json(new ApiError(500, "Error retrieving topics structure"));
   }
 });
 
@@ -152,22 +170,32 @@ const getQuestionsBySubTopic = asyncHandler(async (req, res) => {
     // Validate input
     console.log(subTopic, numberOfQuestions);
     if (!subTopic || !Array.isArray(subTopic) || !numberOfQuestions) {
-      throw new ApiError(
-        400,
-        "Both subTopic array and numberOfQuestions are required"
-      );
+      return res
+        .status(400)
+        .json(
+          new ApiError(
+            400,
+            "Both subTopic array and numberOfQuestions are required"
+          )
+        );
     }
 
     // Convert numberOfQuestions to integer
     const numQuestions = parseInt(numberOfQuestions);
     if (isNaN(numQuestions) || numQuestions <= 0) {
-      throw new ApiError(400, "numberOfQuestions must be a positive integer");
+      return res
+        .status(400)
+        .json(
+          new ApiError(400, "numberOfQuestions must be a positive integer")
+        );
     }
 
     // Get the topic document
     const topicDoc = await Topic.findOne();
     if (!topicDoc) {
-      throw new ApiError(404, "No topics found in the database");
+      return res
+        .status(404)
+        .json(new ApiError(404, "No topics found in the database"));
     }
 
     // Get all topic keys from the document (excluding MongoDB specific fields)
@@ -206,7 +234,11 @@ const getQuestionsBySubTopic = asyncHandler(async (req, res) => {
     }
 
     if (allSelectedQuestions.length === 0) {
-      throw new ApiError(404, `No questions found for the requested subtopics`);
+      return res
+        .status(404)
+        .json(
+          new ApiError(404, `No questions found for the requested subtopics`)
+        );
     }
 
     // Shuffle all selected
@@ -225,10 +257,12 @@ const getQuestionsBySubTopic = asyncHandler(async (req, res) => {
     );
   } catch (error) {
     if (error instanceof ApiError) {
-      throw error;
+      return res.status(error.statusCode).json(error);
     }
     console.error("Error in getQuestionsBySubTopic:", error);
-    throw new ApiError(500, "Error retrieving questions");
+    return res
+      .status(500)
+      .json(new ApiError(500, "Error retrieving questions"));
   }
 });
 

@@ -6,6 +6,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import AptitudeTestResult from "../models/aptitude_result.model.js";
 import nodemailer from "nodemailer";
 import otpGenerator from "otp-generator";
+import { processUserProfile } from "./user.gemini.controller.js";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -106,7 +107,7 @@ const sendOTPEmail = async (email, otp) => {
 
     await transporter.sendMail(mailOptions);
   } catch (error) {
-    throw new ApiError(500, "Error sending OTP email: " + error.message);
+    return new ApiError(500, "Error sending OTP email: " + error.message);
   }
 };
 
@@ -114,13 +115,13 @@ const sendOTP = asyncHandler(async (req, res) => {
   const { email } = req.body;
   console.log(email);
   if (!email) {
-    throw new ApiError(400, "Email is required");
+    return res.status(400).json(new ApiError(400, "Email is required"));
   }
 
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
-    throw new ApiError(400, "Invalid email format");
+    return res.status(400).json(new ApiError(400, "Invalid email format"));
   }
 
   const otp = generateOTP;
@@ -133,12 +134,12 @@ const sendOTP = asyncHandler(async (req, res) => {
   );
 
   if (!savedOtp) {
-    throw new ApiError(500, "Error saving OTP");
+    return res.status(500).json(new ApiError(500, "Error saving OTP"));
   }
 
   await sendOTPEmail(email, otp);
 
-  throw res
+  return res
     .status(200)
     .json(new ApiResponse(200, { email }, "OTP sent successfully"));
 });
@@ -149,14 +150,16 @@ const verifyOTP = asyncHandler(async (req, res) => {
   console.log(otp);
   // Validate input
   if (!email || !otp) {
-    throw res.status(400).json(new ApiError(400, "Email and OTP are required"));
+    return res
+      .status(400)
+      .json(new ApiError(400, "Email and OTP are required"));
   }
 
   // Check for OTP record
   const otpRecord = await Otp.findOne({ email });
 
   if (!otpRecord) {
-    throw res
+    return res
       .status(400)
       .json(new ApiError(400, "No OTP found for this email"));
   }
@@ -164,12 +167,12 @@ const verifyOTP = asyncHandler(async (req, res) => {
   // Check if OTP has expired
   if (new Date() > otpRecord.otpExpiration) {
     await Otp.deleteOne({ email });
-    throw res.status(400).json(new ApiError(400, "OTP has expired"));
+    return res.status(400).json(new ApiError(400, "OTP has expired"));
   }
 
   // Validate the OTP
   if (otpRecord.otp !== otp) {
-    throw res.status(400).json(new ApiError(400, "Invalid OTP"));
+    return res.status(400).json(new ApiError(400, "Invalid OTP"));
   }
 
   // Find the user by email
@@ -193,12 +196,13 @@ const verifyOTP = asyncHandler(async (req, res) => {
       new ApiResponse(200, { user, accessToken }, "OTP verified successfully")
     );
 });
+
 const updateUserProfile = asyncHandler(async (req, res) => {
   const { userId, updates } = req.body;
 
   // Validate input
   if (!userId) {
-    throw new ApiError(400, "User ID is required");
+    return res.status(400).json(new ApiError(400, "User ID is required"));
   }
 
   // Handle aptitude test results specifically
@@ -251,10 +255,14 @@ const updateUserProfile = asyncHandler(async (req, res) => {
       );
     } catch (error) {
       console.error("Aptitude assessment processing error:", error);
-      throw new ApiError(
-        400,
-        `Invalid aptitude assessment data: ${error.message}`
-      );
+      return res
+        .status(400)
+        .json(
+          new ApiError(
+            400,
+            `Invalid aptitude assessment data: ${error.message}`
+          )
+        );
     }
   }
 
@@ -269,9 +277,9 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   ).populate("aptitudeAssessments");
 
   if (!user) {
-    throw new ApiError(404, "User not found");
+    return res.status(404).json(new ApiError(404, "User not found"));
   }
-
+  await processUserProfile(user);
   return res
     .status(200)
     .json(new ApiResponse(200, { user }, "User profile updated successfully"));
@@ -281,13 +289,13 @@ const getUserById = asyncHandler(async (req, res) => {
   const userId = req.body.userId;
 
   if (!userId) {
-    throw new ApiError(400, "User ID is required");
+    return res.status(400).json(new ApiError(400, "User ID is required"));
   }
 
   const user = await User.findById(userId).populate("aptitudeAssessments");
 
   if (!user) {
-    throw new ApiError(404, "User not found");
+    return res.status(404).json(new ApiError(404, "User not found"));
   }
 
   return res
@@ -318,20 +326,20 @@ const scrapeLeetcodeProfile = async (username) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Error response:", errorText); // Debug log
-      throw new Error(`Failed to fetch LeetCode profile: ${errorText}`);
+      return new Error(`Failed to fetch LeetCode profile: ${errorText}`);
     }
 
     const data = await response.json();
     // console.log("Received data:", data); // Debug log
 
     if (!data || !data.data) {
-      throw new Error("Invalid response format");
+      return new Error("Invalid response format");
     }
 
     return data.data;
   } catch (error) {
     console.error("Detailed error:", error); // Debug log
-    throw new ApiError(500, "Failed to fetch LeetCode profile", [
+    return new ApiError(500, "Failed to fetch LeetCode profile", [
       error.message,
       error.stack,
     ]);
@@ -343,21 +351,27 @@ const leetCodeProfileFetcher = asyncHandler(async (req, res) => {
     const { userId } = req.body;
 
     if (!userId) {
-      throw new ApiError(400, "Invalid or missing User ID");
+      return res
+        .status(400)
+        .json(new ApiError(400, "Invalid or missing User ID"));
     }
 
     const user = await User.findById(userId);
     if (!user) {
-      throw new ApiError(404, "User not found");
+      return res.status(404).json(new ApiError(404, "User not found"));
     }
 
     if (!user.leetcode) {
-      throw new ApiError(400, "LeetCode username not set for this user");
+      return res
+        .status(400)
+        .json(new ApiError(400, "LeetCode username not set for this user"));
     }
 
     const profileData = await scrapeLeetcodeProfile(user.leetcode);
     if (!profileData) {
-      throw new ApiError(500, "Failed to fetch LeetCode profile data");
+      return res
+        .status(500)
+        .json(new ApiError(500, "Failed to fetch LeetCode profile data"));
     }
 
     user.leetCodeData = user.leetCodeData || {};
@@ -450,17 +464,21 @@ const githubProfileFetcher = asyncHandler(async (req, res) => {
     const { userId } = req.body;
 
     if (!userId) {
-      throw new ApiError(400, "Invalid or missing User ID");
+      return res
+        .status(400)
+        .json(new ApiError(400, "Invalid or missing User ID"));
     }
 
     // Find user
     const user = await User.findById(userId);
     if (!user) {
-      throw new ApiError(404, "User not found");
+      return res.status(404).json(new ApiError(404, "User not found"));
     }
 
     if (!user.github) {
-      throw new ApiError(400, "GitHub username not set for this user");
+      return res
+        .status(400)
+        .json(new ApiError(400, "GitHub username not set for this user"));
     }
 
     // Fetch GitHub profile data
@@ -541,6 +559,7 @@ const githubProfileFetcher = asyncHandler(async (req, res) => {
       .json(new ApiError(500, "Internal server error", [error.message]));
   }
 });
+
 export {
   sendOTP,
   verifyOTP,

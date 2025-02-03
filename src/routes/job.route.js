@@ -4,7 +4,6 @@ import {
   applyJobs,
   searchJobs,
   recommendedJobs,
-  youMightLikeJobs,
   getAppliedJobs,
 } from "../controllers/job.controller.js";
 
@@ -15,6 +14,5 @@ jobRouter.post("/apply", applyJobs);
 jobRouter.post("/applied", getAppliedJobs);
 jobRouter.post("/search", searchJobs);
 jobRouter.post("/recommended", recommendedJobs);
-jobRouter.post("/you-might-like", youMightLikeJobs);
 
 export default jobRouter;

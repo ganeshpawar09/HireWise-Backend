@@ -19,6 +19,13 @@ const jobSchema = new mongoose.Schema({
   companyIndustry: { type: String },
   companySize: { type: Number },
   applicants: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  embedding: { type: [Number], default: [] },
+  clusters: [
+    {
+      clusterId: { type: mongoose.Schema.Types.ObjectId, ref: "Cluster" },
+      percentage: { type: Number },
+    },
+  ],
 });
 
 export const Job = mongoose.model("Job", jobSchema);
