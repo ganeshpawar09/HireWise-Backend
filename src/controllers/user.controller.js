@@ -303,113 +303,223 @@ const getUserById = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, { user }, "User profile fetched successfully"));
 });
 
-const scrapeLeetcodeProfile = async (username) => {
-  try {
-    console.log("Fetching profile for:", username); // Debug log
-    console.log(`${process.env.fastApi}/api/leetcode/profile`);
-    const response = await fetch(
-      `${process.env.fastApi}/api/leetcode/profile`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ username }),
-        // Add timeout
-        timeout: 30000,
-      }
-    );
+// const scrapeLeetcodeProfile = async (username) => {
+//   try {
+//     console.log("Fetching profile for:", username); // Debug log
+//     console.log(`${process.env.fastApi}/api/leetcode/profile`);
+//     const response = await fetch(
+//       `${process.env.fastApi}/api/leetcode/profile`,
+//       {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/json",
+//           Accept: "application/json",
+//         },
+//         body: JSON.stringify({ username }),
+//         // Add timeout
+//         timeout: 30000,
+//       }
+//     );
 
-    console.log("Response status:", response.status); // Debug log
+//     console.log("Response status:", response.status); // Debug log
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Error response:", errorText); // Debug log
-      return new Error(`Failed to fetch LeetCode profile: ${errorText}`);
-    }
+//     if (!response.ok) {
+//       const errorText = await response.text();
+//       console.error("Error response:", errorText); // Debug log
+//       return new Error(`Failed to fetch LeetCode profile: ${errorText}`);
+//     }
 
-    const data = await response.json();
-    // console.log("Received data:", data); // Debug log
+//     const data = await response.json();
+//     // console.log("Received data:", data); // Debug log
 
-    if (!data || !data.data) {
-      return new Error("Invalid response format");
-    }
+//     if (!data || !data.data) {
+//       return new Error("Invalid response format");
+//     }
 
-    return data.data;
-  } catch (error) {
-    console.error("Detailed error:", error); // Debug log
-    return new ApiError(500, "Failed to fetch LeetCode profile", [
-      error.message,
-      error.stack,
-    ]);
-  }
-};
+//     return data.data;
+//   } catch (error) {
+//     console.error("Detailed error:", error); // Debug log
+//     return new ApiError(500, "Failed to fetch LeetCode profile", [
+//       error.message,
+//       error.stack,
+//     ]);
+//   }
+// };
 
-const leetCodeProfileFetcher = asyncHandler(async (req, res) => {
+const leetCodeProfileFetcher = async (req, res) => {
   try {
     const { userId } = req.body;
 
     if (!userId) {
-      return res
-        .status(400)
-        .json(new ApiError(400, "Invalid or missing User ID"));
+      return res.status(400).json({
+        status: 400,
+        message: "Invalid or missing User ID",
+      });
     }
 
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json(new ApiError(404, "User not found"));
+      return res.status(404).json({
+        status: 404,
+        message: "User not found",
+      });
     }
 
     if (!user.leetcode) {
-      return res
-        .status(400)
-        .json(new ApiError(400, "LeetCode username not set for this user"));
+      return res.status(400).json({
+        status: 400,
+        message: "LeetCode username not set for this user",
+      });
     }
 
-    const profileData = await scrapeLeetcodeProfile(user.leetcode);
+    const username = user.leetcode;
+    const baseUrl = "https://leetcode.com/graphql";
+
+    const operationQueryDict = {
+      languageStats: `
+          query languageStats($username: String!) {
+            matchedUser(username: $username) {
+              languageProblemCount {
+                languageName
+                problemsSolved
+              }
+            }
+          }
+        `,
+      skillStats: `
+          query skillStats($username: String!) {
+            matchedUser(username: $username) {
+              tagProblemCounts {
+                advanced {
+                  tagName
+                  problemsSolved
+                }
+              }
+            }
+          }
+        `,
+      userProblemsSolved: `
+          query userProblemsSolved($username: String!) {
+            matchedUser(username: $username) {
+              submitStatsGlobal {
+                acSubmissionNum {
+                  difficulty
+                  count
+                }
+              }
+            }
+          }
+        `,
+      userProfileCalendar: `
+          query userProfileCalendar($username: String!, $year: Int) {
+            matchedUser(username: $username) {
+              userCalendar(year: $year) {
+                streak
+                totalActiveDays
+              }
+            }
+          }
+        `,
+      userContestRankingInfo: `
+          query userContestRankingInfo($username: String!) {
+            userContestRankingHistory(username: $username) {
+              rating
+            }
+          }
+        `,
+    };
+
+    const scrapeUserProfile = async (username) => {
+      const output = {};
+
+      const scrapeSingleOperation = async (operation) => {
+        const jsonData = {
+          query: operationQueryDict[operation],
+          variables: { username },
+          operationName: operation,
+        };
+
+        try {
+          const response = await fetch(baseUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify(jsonData),
+          });
+
+          if (!response.ok) {
+            throw new Error(
+              `Error fetching operation ${operation}: ${response.statusText}`
+            );
+          }
+
+          const responseData = await response.json();
+          output[operation] = responseData.data || {};
+        } catch (error) {
+          console.error(`Error in operation ${operation}:`, error);
+        }
+      };
+
+      const operations = Object.keys(operationQueryDict);
+      await Promise.all(operations.map(scrapeSingleOperation));
+
+      if (output.userContestRankingInfo) {
+        const ratings =
+          output.userContestRankingInfo.userContestRankingHistory || [];
+        output.userContestRankingInfo.userContestRankingHistory =
+          ratings.slice(-10);
+      }
+
+      return output;
+    };
+
+    const profileData = await scrapeUserProfile(username);
+
     if (!profileData) {
-      return res
-        .status(500)
-        .json(new ApiError(500, "Failed to fetch LeetCode profile data"));
+      return res.status(500).json({
+        status: 500,
+        message: "Failed to fetch LeetCode profile data",
+      });
     }
 
     user.leetCodeData = user.leetCodeData || {};
 
-    try {
-      user.leetCodeData.languageUsage = new Map();
-      const languageProblemCount =
-        profileData.languageStats?.matchedUser?.languageProblemCount;
+    const languageProblemCount =
+      profileData.languageStats?.matchedUser?.languageProblemCount;
 
-      if (Array.isArray(languageProblemCount)) {
-        languageProblemCount.forEach(({ languageName, problemsSolved }) => {
-          if (languageName && typeof problemsSolved === "number") {
-            user.leetCodeData.languageUsage.set(languageName, problemsSolved);
-          }
-        });
-      }
-    } catch (error) {
-      console.error("Error processing language stats:", error);
+    if (Array.isArray(languageProblemCount)) {
+      user.leetCodeData.languageUsage = Object.fromEntries(
+        languageProblemCount
+          .filter(
+            ({ languageName, problemsSolved }) =>
+              languageName && typeof problemsSolved === "number"
+          )
+          .map(({ languageName, problemsSolved }) => [
+            languageName,
+            problemsSolved,
+          ])
+      );
     }
 
-    try {
-      user.leetCodeData.skillStats = new Map();
-      const topicProblemCounts =
-        profileData.skillStats?.matchedUser?.tagProblemCounts?.advanced;
+    const topicProblemCounts =
+      profileData.skillStats?.matchedUser?.tagProblemCounts?.advanced;
 
-      if (Array.isArray(topicProblemCounts)) {
-        topicProblemCounts.forEach(({ tagName, problemsSolved }) => {
-          if (tagName && typeof problemsSolved === "number") {
-            user.leetCodeData.skillStats.set(tagName, problemsSolved);
-          }
-        });
-      }
-    } catch (error) {
-      console.error("Error processing skill stats:", error);
+    if (Array.isArray(topicProblemCounts)) {
+      user.leetCodeData.skillStats = Object.fromEntries(
+        topicProblemCounts
+          .filter(
+            ({ tagName, problemsSolved }) =>
+              tagName && typeof problemsSolved === "number"
+          )
+          .map(({ tagName, problemsSolved }) => [tagName, problemsSolved])
+      );
     }
 
     const userCalendar =
       profileData.userProfileCalendar?.matchedUser?.userCalendar;
+
     if (userCalendar) {
       user.leetCodeData.submissionStats = {
         activeDays: userCalendar.totalActiveDays || 0,
@@ -420,14 +530,14 @@ const leetCodeProfileFetcher = asyncHandler(async (req, res) => {
     const submitStatsGlobal =
       profileData.userProblemsSolved?.matchedUser?.submitStatsGlobal
         ?.acSubmissionNum;
-
     if (Array.isArray(submitStatsGlobal)) {
-      user.leetCodeData.problemsSolvedStats = {};
-      submitStatsGlobal.forEach(({ difficulty, count }) => {
-        if (difficulty && typeof count === "number") {
-          user.leetCodeData.problemsSolvedStats[difficulty] = count;
-        }
-      });
+      user.leetCodeData.problemStats = Object.fromEntries(
+        submitStatsGlobal
+          .filter(
+            ({ difficulty, count }) => difficulty && typeof count === "number"
+          )
+          .map(({ difficulty, count }) => [difficulty, count])
+      );
     }
 
     const userContestRankingHistory =
@@ -441,23 +551,21 @@ const leetCodeProfileFetcher = asyncHandler(async (req, res) => {
 
     await user.save();
 
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(200, { user }, "User profile extracted successfully")
-      );
+    return res.status(200).json({
+      status: 200,
+      data: { user },
+      message: "User profile extracted successfully",
+    });
   } catch (error) {
     console.error("Profile fetcher error:", error);
 
-    if (error instanceof ApiError) {
-      return res.status(error.statusCode).json(error);
-    }
-
-    return res
-      .status(500)
-      .json(new ApiError(500, "Internal server error", [error.message]));
+    return res.status(500).json({
+      status: 500,
+      message: "Internal server error",
+      errors: [error.message],
+    });
   }
-});
+};
 
 const githubProfileFetcher = asyncHandler(async (req, res) => {
   try {

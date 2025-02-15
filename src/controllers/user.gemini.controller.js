@@ -168,6 +168,7 @@ export const createUserProfileFromResume = async (req, res) => {
 export const getUserFeedback = async (req, res) => {
   try {
     const { userId } = req.body;
+    console.log(userId);
     const user = await User.findById(userId);
 
     if (!user) {
@@ -222,8 +223,20 @@ export const getUserFeedback = async (req, res) => {
 // Get interview questions
 export const getInterviewQuestion = async (req, res) => {
   try {
-    const { userId, companyName, role, interviewType } = req.body;
+    const {
+      userId,
+      companyName,
+      role,
+      interviewType,
+      experienceLevel,
+      jobDescription,
+    } = req.body;
     const user = await User.findById(userId);
+    console.log(userId);
+    console.log(companyName);
+    console.log(interviewType);
+    console.log(experienceLevel);
+    console.log(jobDescription);
 
     if (!user) {
       return res.status(404).json(new ApiError(404, "User not found"));
@@ -231,11 +244,15 @@ export const getInterviewQuestion = async (req, res) => {
 
     const chatSession = model.startChat({ generationConfig, history: [] });
 
+    // Construct the prompt with optional job description
     const prompt = `You are an interviewer conducting a ${interviewType} interview for a ${role} position at ${companyName}.
       The candidate's profile is:
       ${JSON.stringify(user)}
-      
-      Return a JSON array of interview questions.
+
+      The experience level required for this position is: ${experienceLevel}.
+      ${jobDescription ? `Job description: ${jobDescription}` : ""}
+
+      Return a JSON array of only 2 interview questions.
       Example: ["Question 1", "Question 2", "Question 3"]`;
 
     const result = await chatSession.sendMessage(prompt);
