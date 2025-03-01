@@ -51,6 +51,8 @@ const ExperienceSchema = new Schema({
   endDate: { type: String, required: true },
 });
 
+
+
 const UserSchema = new Schema(
   {
     firstName: String,
@@ -74,8 +76,11 @@ const UserSchema = new Schema(
     experience: [ExperienceSchema],
     projects: [ProjectSchema],
     appliedJobs: [{ type: Schema.Types.ObjectId, ref: "Job" }],
-    aptitudeAssessments: [
+    aptitudeTestResult: [
       { type: Schema.Types.ObjectId, ref: "AptitudeTestResult" },
+    ],
+    mockInterviewResult: [
+      { type: Schema.Types.ObjectId, ref: "MockInterviewResult" },
     ],
     gitHubData: GitHubDataSchema,
     leetCodeData: LeetCodeDataSchema,
@@ -84,7 +89,6 @@ const UserSchema = new Schema(
     github: String,
     portfolio: String,
     accessToken: { type: String },
-    appliedJobs: [{ type: Schema.Types.ObjectId, ref: "Job" }],
     notInterestedJobs: [{ type: Schema.Types.ObjectId, ref: "Job" }],
     embedding: { type: [Number], default: [] },
     clusters: [

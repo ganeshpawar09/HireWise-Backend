@@ -6,7 +6,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import AptitudeTestResult from "../models/aptitude_result.model.js";
 import nodemailer from "nodemailer";
 import otpGenerator from "otp-generator";
-import { processUserProfile } from "./user.gemini.controller.js";
+import { matchRole } from "./job.controller.js";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -176,7 +176,10 @@ const verifyOTP = asyncHandler(async (req, res) => {
   }
 
   // Find the user by email
-  let user = await User.findOne({ email }).populate("aptitudeAssessments");
+  let user = await User.findOne({ email }).populate([
+    "aptitudeTestResult",
+    "mockInterviewResult",
+  ]);
 
   // If user does not exist, create a new user
   if (!user) {
@@ -197,92 +200,109 @@ const verifyOTP = asyncHandler(async (req, res) => {
     );
 });
 
+// ✅ Function to process aptitude test results
+const processAptitudeTestResults = async (userId, aptitudeResults) => {
+  if (!aptitudeResults || aptitudeResults.length === 0) return [];
+
+  try {
+    const savedAssessments = await Promise.all(
+      aptitudeResults.map(async (assessment) => {
+        // Convert nested objects to Maps
+        const topicWiseAnalysis = new Map();
+
+        if (assessment.analytics?.topicWiseAnalysis) {
+          for (const [topicKey, topicValue] of Object.entries(
+            assessment.analytics.topicWiseAnalysis
+          )) {
+            const subTopics = new Map();
+
+            if (topicValue.subTopics) {
+              for (const [subTopicKey, subTopicValue] of Object.entries(
+                topicValue.subTopics
+              )) {
+                subTopics.set(subTopicKey, subTopicValue);
+              }
+            }
+
+            topicWiseAnalysis.set(topicKey, { ...topicValue, subTopics });
+          }
+        }
+
+        const testResult = new AptitudeTestResult({
+          analytics: { ...assessment.analytics, topicWiseAnalysis },
+          timePerQuestion: assessment.timePerQuestion,
+          totalTimeTaken: assessment.totalTimeTaken,
+          date: new Date(assessment.date || Date.now()),
+          user: userId,
+        });
+
+        return await testResult.save();
+      })
+    );
+
+    return savedAssessments.map((result) => result._id);
+  } catch (error) {
+    console.error("Aptitude assessment processing error:", error);
+    throw new ApiError(
+      400,
+      `Invalid aptitude assessment data: ${error.message}`
+    );
+  }
+};
+
 const updateUserProfile = asyncHandler(async (req, res) => {
   const { userId, updates } = req.body;
 
-  // Validate input
   if (!userId) {
     return res.status(400).json(new ApiError(400, "User ID is required"));
   }
 
-  // Handle aptitude test results specifically
-  if (updates.aptitudeAssessments && updates.aptitudeAssessments.length > 0) {
-    try {
-      const savedAssessments = await Promise.all(
-        updates.aptitudeAssessments.map(async (assessment) => {
-          // Convert nested objects to Maps
-          const topicWiseAnalysis = new Map();
-
-          if (assessment.analytics && assessment.analytics.topicWiseAnalysis) {
-            for (const [topicKey, topicValue] of Object.entries(
-              assessment.analytics.topicWiseAnalysis
-            )) {
-              const subTopics = new Map();
-
-              if (topicValue.subTopics) {
-                for (const [subTopicKey, subTopicValue] of Object.entries(
-                  topicValue.subTopics
-                )) {
-                  subTopics.set(subTopicKey, subTopicValue);
-                }
-              }
-
-              topicWiseAnalysis.set(topicKey, {
-                ...topicValue,
-                subTopics,
-              });
-            }
-          }
-
-          const testResult = new AptitudeTestResult({
-            analytics: {
-              ...assessment.analytics,
-              topicWiseAnalysis,
-            },
-            timePerQuestion: assessment.timePerQuestion,
-            totalTimeTaken: assessment.totalTimeTaken,
-            date: new Date(assessment.date || Date.now()),
-            user: userId,
-          });
-
-          return await testResult.save();
-        })
+  try {
+    // Process aptitude test results separately
+    if (updates.aptitudeTestResult) {
+      updates.aptitudeTestResult = await processAptitudeTestResults(
+        userId,
+        updates.aptitudeTestResult
       );
+    }
 
-      // Update updates to reference new test result IDs
-      updates.aptitudeAssessments = savedAssessments.map(
-        (result) => result._id
+    // Fetch existing user data
+    const existingUser = await User.findById(userId);
+    if (!existingUser) {
+      return res.status(404).json(new ApiError(404, "User not found"));
+    }
+
+    // Check if keySkills have changed
+    const skillsUpdated =
+      updates.keySkills &&
+      JSON.stringify(updates.keySkills) !==
+        JSON.stringify(existingUser.keySkills);
+
+    // Update user profile
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: updates },
+      { new: true, runValidators: true }
+    ).populate(["aptitudeTestResult", "mockInterviewResult"]);
+
+    // If skills are updated, call matchRole to update clusters & embedding
+    if (skillsUpdated) {
+      const { clusters, embedding } = await matchRole(user.keySkills);
+      user.clusters = clusters;
+      user.embedding = embedding;
+      await user.save();
+    }
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, { user }, "User profile updated successfully")
       );
-    } catch (error) {
-      console.error("Aptitude assessment processing error:", error);
-      return res
-        .status(400)
-        .json(
-          new ApiError(
-            400,
-            `Invalid aptitude assessment data: ${error.message}`
-          )
-        );
-    }
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(new ApiError(error.statusCode || 500, error.message));
   }
-
-  // Update user profile
-  const user = await User.findByIdAndUpdate(
-    userId,
-    { $set: updates },
-    {
-      new: true,
-      runValidators: true,
-    }
-  ).populate("aptitudeAssessments");
-
-  if (!user) {
-    return res.status(404).json(new ApiError(404, "User not found"));
-  }
-  await processUserProfile(user);
-  return res
-    .status(200)
-    .json(new ApiResponse(200, { user }, "User profile updated successfully"));
 });
 
 const getUserById = asyncHandler(async (req, res) => {
@@ -292,7 +312,10 @@ const getUserById = asyncHandler(async (req, res) => {
     return res.status(400).json(new ApiError(400, "User ID is required"));
   }
 
-  const user = await User.findById(userId).populate("aptitudeAssessments");
+  const user = await User.findById(userId).populate([
+    "aptitudeTestResult",
+    "mockInterviewResult",
+  ]);
 
   if (!user) {
     return res.status(404).json(new ApiError(404, "User not found"));
@@ -302,49 +325,6 @@ const getUserById = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, { user }, "User profile fetched successfully"));
 });
-
-// const scrapeLeetcodeProfile = async (username) => {
-//   try {
-//     console.log("Fetching profile for:", username); // Debug log
-//     console.log(`${process.env.fastApi}/api/leetcode/profile`);
-//     const response = await fetch(
-//       `${process.env.fastApi}/api/leetcode/profile`,
-//       {
-//         method: "POST",
-//         headers: {
-//           "Content-Type": "application/json",
-//           Accept: "application/json",
-//         },
-//         body: JSON.stringify({ username }),
-//         // Add timeout
-//         timeout: 30000,
-//       }
-//     );
-
-//     console.log("Response status:", response.status); // Debug log
-
-//     if (!response.ok) {
-//       const errorText = await response.text();
-//       console.error("Error response:", errorText); // Debug log
-//       return new Error(`Failed to fetch LeetCode profile: ${errorText}`);
-//     }
-
-//     const data = await response.json();
-//     // console.log("Received data:", data); // Debug log
-
-//     if (!data || !data.data) {
-//       return new Error("Invalid response format");
-//     }
-
-//     return data.data;
-//   } catch (error) {
-//     console.error("Detailed error:", error); // Debug log
-//     return new ApiError(500, "Failed to fetch LeetCode profile", [
-//       error.message,
-//       error.stack,
-//     ]);
-//   }
-// };
 
 const leetCodeProfileFetcher = async (req, res) => {
   try {

@@ -3,6 +3,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Cluster } from "../models/cluster.model.js";
+import { matchRole } from "./job.controller.js";
 
 const apiKey = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
@@ -148,7 +149,10 @@ export const createUserProfileFromResume = async (req, res) => {
 
     await user.save();
 
-    await processUserProfile(user); // Ensure further processing
+    const { clusters, embedding } = await matchRole(user.keySkills);
+    user.clusters = clusters;
+    user.embedding = embedding;
+    await user.save();
 
     return res
       .status(200)
@@ -230,6 +234,7 @@ export const getInterviewQuestion = async (req, res) => {
       interviewType,
       experienceLevel,
       jobDescription,
+      numberOfQuestions,
     } = req.body;
     const user = await User.findById(userId);
     console.log(userId);
@@ -237,6 +242,7 @@ export const getInterviewQuestion = async (req, res) => {
     console.log(interviewType);
     console.log(experienceLevel);
     console.log(jobDescription);
+    console.log(numberOfQuestions);
 
     if (!user) {
       return res.status(404).json(new ApiError(404, "User not found"));
@@ -252,7 +258,7 @@ export const getInterviewQuestion = async (req, res) => {
       The experience level required for this position is: ${experienceLevel}.
       ${jobDescription ? `Job description: ${jobDescription}` : ""}
 
-      Return a JSON array of only 2 interview questions.
+      Return a JSON array of only ${numberOfQuestions} interview questions.
       Example: ["Question 1", "Question 2", "Question 3"]`;
 
     const result = await chatSession.sendMessage(prompt);
@@ -275,82 +281,5 @@ export const getInterviewQuestion = async (req, res) => {
       );
   } catch (error) {
     return res.status(500).json(new ApiError(500, error.message));
-  }
-};
-
-// Process user profile for job clustering and embedding
-export const processUserProfile = async (user) => {
-  try {
-    const prompt = `You are an AI specializing in career analysis. Assign job clusters and generate an embedding.
-    Job Clusters: ["Mobile Developer", "Frontend Developer", "Backend Developer", "AI/ML Developer"]
-
-    User Profile:
-    ${JSON.stringify(user, null, 2)}
-
-    Output JSON:
-    {"clusters": [{"cluster": "Mobile Developer", "percentage": 85}], "embedding": [-0.34, 0.89, -0.12]}`;
-
-    const chatSession = model.startChat({ generationConfig, history: [] });
-    const result = await chatSession.sendMessage(prompt);
-
-    const resultText = result.response.text();
-
-    // Remove markdown formatting (backticks and language identifiers)
-    const cleanedJson = resultText.replace(/```json|```/g, "").trim();
-
-    let userData;
-    try {
-      userData = JSON.parse(cleanedJson);
-    } catch (error) {
-      console.error("Invalid JSON format from AI response:", error);
-      return;
-    }
-
-    if (
-      !userData ||
-      !Array.isArray(userData.clusters) ||
-      !Array.isArray(userData.embedding)
-    ) {
-      console.error("Invalid response format:", userData);
-      return;
-    }
-
-    const updatedClusters = [];
-
-    for (const newCluster of userData.clusters) {
-      const clusterName = newCluster.cluster;
-      const percentage = newCluster.percentage;
-
-      // Check if the cluster already exists in the Cluster collection
-      let cluster = await Cluster.findOne({ name: clusterName });
-
-      // If the cluster does not exist, create a new one
-      if (!cluster) {
-        cluster = new Cluster({ name: clusterName });
-        await cluster.save();
-      }
-
-      // Add cluster to the user's profile (ensuring no duplicates)
-      const existingCluster = user.clusters.find((c) =>
-        c.clusterId.equals(cluster._id)
-      );
-
-      if (existingCluster) {
-        existingCluster.percentage = percentage; // Update existing cluster percentage
-      } else {
-        updatedClusters.push({ clusterId: cluster._id, percentage });
-      }
-    }
-
-    // Merge updated clusters with existing ones
-    user.clusters = [...user.clusters, ...updatedClusters];
-
-    // Update user embedding
-    user.embedding = userData.embedding;
-
-    // Save the updated user profile
-    await user.save();
-  } catch (error) {
-    console.error("Error processing user profile:", error);
   }
 };
