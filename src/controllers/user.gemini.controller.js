@@ -4,6 +4,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Cluster } from "../models/cluster.model.js";
 import { matchRole } from "./job.controller.js";
+import { updateUserClusters } from "./user.controller.js";
 
 const apiKey = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
@@ -77,15 +78,19 @@ export const createUserProfileFromResume = async (req, res) => {
 
     Format:
     {
-      "firstName": "", "lastName": "", "email": "", "phoneNumber": "",
-      "profileSummary": "", "profileHeadline": "", "careerBreak": false, "fresher": false,
-      "keySkills": [], "achievements": [], "softSkills": [], "languages": [],
-      "linkedin": "", "leetcode": "", "github": "", "portfolio": "",
+      "firstName": "", 
+      "lastName": "", 
+      "email": "", 
+      "phoneNumber": "",
+      "profileSummary": "", 
+      "profileHeadline": "", 
+      "careerBreak": false, 
+      "fresher": false,
+      "keySkills": [],
+      "achievements": [], 
       "education": [{ "institution": "", "degree": "", "startYear": "", "endYear": "" }],
       "experience": [{ "companyName": "", "jobTitle": "", "startDate": "", "endDate": "" }],
       "projects": [{ "title": "", "description": "", "technologyUsed": "", "projectLink": "" }],
-      "gitHubData": { "repositories": 0, "stars": 0, "followers": 0, "following": 0, "languageDistribution": {} },
-      "leetCodeData": { "ratingHistory": [], "problemStats": {}, "languageUsage": {}, "skillStats": {}, "submissionStats": { "activeDays": 0, "maxStreak": 0 } }
     }
 
     Existing Profile Data:
@@ -116,7 +121,6 @@ export const createUserProfileFromResume = async (req, res) => {
         .status(500)
         .json(new ApiError(500, "Failed to parse extracted profile data"));
     }
-    // Merge new data with the existing user profile
     Object.assign(user, {
       firstName: formattedProfile.firstName || user.firstName,
       lastName: formattedProfile.lastName || user.lastName,
@@ -128,12 +132,6 @@ export const createUserProfileFromResume = async (req, res) => {
       fresher: formattedProfile.fresher ?? user.fresher,
       keySkills: formattedProfile.keySkills || user.keySkills,
       achievements: formattedProfile.achievements || user.achievements,
-      softSkills: formattedProfile.softSkills || user.softSkills,
-      languages: formattedProfile.languages || user.languages,
-      linkedin: formattedProfile.linkedin || user.linkedin,
-      leetcode: formattedProfile.leetcode || user.leetcode,
-      github: formattedProfile.github || user.github,
-      portfolio: formattedProfile.portfolio || user.portfolio,
       education: formattedProfile.education?.length
         ? validateEducation(formattedProfile.education)
         : user.education,
@@ -143,17 +141,25 @@ export const createUserProfileFromResume = async (req, res) => {
       projects: formattedProfile.projects?.length
         ? validateProjects(formattedProfile.projects)
         : user.projects,
-      gitHubData: formattedProfile.gitHubData || user.gitHubData,
-      leetCodeData: formattedProfile.leetCodeData || user.leetCodeData,
     });
 
     await user.save();
 
-    const { clusters, embedding } = await matchRole(user.keySkills);
-    user.clusters = clusters;
-    user.embedding = embedding;
-    await user.save();
+    const response = await matchRole(user.keySkills);
+    await updateUserClusters(user, response);
 
+    await user.save();
+    user = await User.findById(userId)
+      .populate({
+        path: "aptitudeTestResult",
+        populate: {
+          path: "selectedOptions.question",
+          model: "Question",
+          select:
+            "questionText topic subTopic level options correctOptionIndex explanation",
+        },
+      })
+      .populate("mockInterviewResult");
     return res
       .status(200)
       .json(

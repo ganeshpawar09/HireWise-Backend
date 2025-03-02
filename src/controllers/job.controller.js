@@ -147,7 +147,7 @@ export const uploadJobs = asyncHandler(async (req, res) => {
 
 // ✅ Get Personalized Jobs
 export const getPersonalizedJobs = asyncHandler(async (req, res) => {
-  const { userId } = req.params;
+  const { userId } = req.body;
 
   const user = await User.findById(userId);
   if (!user) {
@@ -188,7 +188,12 @@ export const getPersonalizedJobs = asyncHandler(async (req, res) => {
         job,
         similarity: cosineSimilarity(user.embedding, job.embedding),
       }))
-      .filter((j) => j.similarity > 0.5)
+      .filter(
+        (j) =>
+          j.similarity > 0.3 &&
+          j.job.applicants &&
+          !j.job.applicants.includes(userId)
+      )
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, 10)
       .map((j) => j.job);
@@ -250,7 +255,9 @@ export const searchJobs = asyncHandler(async (req, res) => {
     _id: { $in: cluster.jobs.map((j) => j.jobId) },
   });
   const matchingJobs = jobs.filter(
-    (job) => cosineSimilarity(user.embedding, job.embedding) > 0.5
+    (job) =>
+      cosineSimilarity(user.embedding, job.embedding) > 0.3 &&
+      (!job.applicants || !job.applicants.includes(userId))
   );
 
   return res

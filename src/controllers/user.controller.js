@@ -7,6 +7,8 @@ import AptitudeTestResult from "../models/aptitude_result.model.js";
 import nodemailer from "nodemailer";
 import otpGenerator from "otp-generator";
 import { matchRole } from "./job.controller.js";
+import { Cluster } from "../models/cluster.model.js";
+import { Question } from "../models/topic.model.js";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -176,10 +178,17 @@ const verifyOTP = asyncHandler(async (req, res) => {
   }
 
   // Find the user by email
-  let user = await User.findOne({ email }).populate([
-    "aptitudeTestResult",
-    "mockInterviewResult",
-  ]);
+  let user = await User.findOne({ email })
+    .populate({
+      path: "aptitudeTestResult",
+      populate: {
+        path: "selectedOptions.question",
+        model: "Question",
+        select:
+          "questionText topic subTopic level options correctOptionIndex explanation",
+      },
+    })
+    .populate("mockInterviewResult");
 
   // If user does not exist, create a new user
   if (!user) {
@@ -200,55 +209,32 @@ const verifyOTP = asyncHandler(async (req, res) => {
     );
 });
 
-// ✅ Function to process aptitude test results
-const processAptitudeTestResults = async (userId, aptitudeResults) => {
-  if (!aptitudeResults || aptitudeResults.length === 0) return [];
+export async function updateUserClusters(user, result) {
+  // Update user embedding
+  user.embedding = result.user_vector;
 
-  try {
-    const savedAssessments = await Promise.all(
-      aptitudeResults.map(async (assessment) => {
-        // Convert nested objects to Maps
-        const topicWiseAnalysis = new Map();
+  // Process proximity scores
+  const proximityScores = result.proximity_scores;
+  const clusterUpdates = [];
 
-        if (assessment.analytics?.topicWiseAnalysis) {
-          for (const [topicKey, topicValue] of Object.entries(
-            assessment.analytics.topicWiseAnalysis
-          )) {
-            const subTopics = new Map();
+  for (const [clusterName, percentage] of Object.entries(proximityScores)) {
+    let cluster = await Cluster.findOne({ name: clusterName });
 
-            if (topicValue.subTopics) {
-              for (const [subTopicKey, subTopicValue] of Object.entries(
-                topicValue.subTopics
-              )) {
-                subTopics.set(subTopicKey, subTopicValue);
-              }
-            }
+    // If cluster does not exist, create it
+    if (!cluster) {
+      cluster = new Cluster({ name: clusterName, jobs: [] });
+      await cluster.save();
+    }
 
-            topicWiseAnalysis.set(topicKey, { ...topicValue, subTopics });
-          }
-        }
-
-        const testResult = new AptitudeTestResult({
-          analytics: { ...assessment.analytics, topicWiseAnalysis },
-          timePerQuestion: assessment.timePerQuestion,
-          totalTimeTaken: assessment.totalTimeTaken,
-          date: new Date(assessment.date || Date.now()),
-          user: userId,
-        });
-
-        return await testResult.save();
-      })
-    );
-
-    return savedAssessments.map((result) => result._id);
-  } catch (error) {
-    console.error("Aptitude assessment processing error:", error);
-    throw new ApiError(
-      400,
-      `Invalid aptitude assessment data: ${error.message}`
-    );
+    clusterUpdates.push({ clusterId: cluster._id, percentage });
   }
-};
+
+  // Update user's clusters
+  user.clusters = clusterUpdates;
+
+  // Save user
+  await user.save();
+}
 
 const updateUserProfile = asyncHandler(async (req, res) => {
   const { userId, updates } = req.body;
@@ -258,14 +244,6 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Process aptitude test results separately
-    if (updates.aptitudeTestResult) {
-      updates.aptitudeTestResult = await processAptitudeTestResults(
-        userId,
-        updates.aptitudeTestResult
-      );
-    }
-
     // Fetch existing user data
     const existingUser = await User.findById(userId);
     if (!existingUser) {
@@ -278,19 +256,26 @@ const updateUserProfile = asyncHandler(async (req, res) => {
       JSON.stringify(updates.keySkills) !==
         JSON.stringify(existingUser.keySkills);
 
-    // Update user profile
     const user = await User.findByIdAndUpdate(
       userId,
       { $set: updates },
       { new: true, runValidators: true }
-    ).populate(["aptitudeTestResult", "mockInterviewResult"]);
+    )
+      .populate({
+        path: "aptitudeTestResult",
+        populate: {
+          path: "selectedOptions.question",
+          model: "Question",
+          select:
+            "questionText topic subTopic level options correctOptionIndex explanation",
+        },
+      })
+      .populate("mockInterviewResult");
 
     // If skills are updated, call matchRole to update clusters & embedding
     if (skillsUpdated) {
-      const { clusters, embedding } = await matchRole(user.keySkills);
-      user.clusters = clusters;
-      user.embedding = embedding;
-      await user.save();
+      const result = await matchRole(user.keySkills);
+      await updateUserClusters(user, result);
     }
 
     return res
@@ -312,10 +297,17 @@ const getUserById = asyncHandler(async (req, res) => {
     return res.status(400).json(new ApiError(400, "User ID is required"));
   }
 
-  const user = await User.findById(userId).populate([
-    "aptitudeTestResult",
-    "mockInterviewResult",
-  ]);
+  const user = await User.findById(userId)
+    .populate({
+      path: "aptitudeTestResult",
+      populate: {
+        path: "selectedOptions.question",
+        model: "Question",
+        select:
+          "questionText topic subTopic level options correctOptionIndex explanation",
+      },
+    })
+    .populate("mockInterviewResult");
 
   if (!user) {
     return res.status(404).json(new ApiError(404, "User not found"));

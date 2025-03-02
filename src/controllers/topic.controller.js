@@ -1,4 +1,7 @@
-import { Topic } from "../models/topic.model.js";
+import mongoose from "mongoose";
+import AptitudeTestResult from "../models/aptitude_result.model.js";
+import { Question, Topic } from "../models/topic.model.js";
+import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -12,109 +15,92 @@ const shuffleArray = (array) => {
   return shuffled;
 };
 
-const addQuestionsByTopic = asyncHandler(async (req, res, next) => {
-  const topicsData = req.body;
+const addQuestions = asyncHandler(async (req, res) => {
+  const questions = req.body;
+
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return res
+      .status(400)
+      .json(new ApiError(400, "Questions must be a non-empty array"));
+  }
+
+  const errors = [];
+
+  // Validate each question
+  questions.forEach((question, index) => {
+    const {
+      topic,
+      subTopic,
+      level,
+      questionText,
+      options,
+      correctOptionIndex,
+    } = question;
+    const missingFields = [];
+
+    if (!topic) missingFields.push("topic");
+    if (!subTopic) missingFields.push("subTopic");
+    if (!level) missingFields.push("level");
+    if (!questionText) missingFields.push("questionText");
+    if (!Array.isArray(options) || options.length < 2)
+      missingFields.push("options");
+    if (
+      correctOptionIndex === undefined ||
+      !Number.isInteger(correctOptionIndex) ||
+      correctOptionIndex < 0 ||
+      correctOptionIndex >= options.length
+    ) {
+      missingFields.push("correctOptionIndex");
+    }
+
+    if (missingFields.length > 0) {
+      errors.push({ index, missingFields });
+    }
+  });
+
+  if (errors.length > 0) {
+    return res
+      .status(400)
+      .json(new ApiError(400, "Some questions have missing fields", errors));
+  }
 
   try {
-    if (
-      !topicsData ||
-      typeof topicsData !== "object" ||
-      Object.keys(topicsData).length === 0
-    ) {
-      return res
-        .status(400)
-        .json(
-          new ApiError(
-            400,
-            "Invalid input: Please provide a valid topics data structure."
-          )
-        );
+    // Insert all valid questions into the database
+    const createdQuestions = await Question.insertMany(questions);
+
+    // Find or create the topic document
+    let topicDoc = await Topic.findOne();
+    if (!topicDoc) {
+      topicDoc = new Topic({ topics: new Map() });
     }
 
-    // Get or create the topic document
-    let topicDoc = (await Topic.findOne()) || new Topic();
+    // Group questions by topic and subtopic
+    createdQuestions.forEach((newQuestion) => {
+      const { topic, subTopic, _id } = newQuestion;
 
-    // Process each main topic (dsa, dbms, etc.)
-    for (const [mainTopic, subTopicsData] of Object.entries(topicsData)) {
-      // Validate main topic exists in schema
-      if (!topicDoc.schema.paths[mainTopic]) {
-        return res
-          .status(400)
-          .json(new ApiError(400, `Invalid main topic: ${mainTopic}`));
+      if (!topicDoc.topics.has(topic)) {
+        topicDoc.topics.set(topic, new Map());
       }
 
-      // Initialize the Map if it doesn't exist
-      if (!topicDoc[mainTopic]) {
-        topicDoc[mainTopic] = new Map();
+      if (!topicDoc.topics.get(topic).has(subTopic)) {
+        topicDoc.topics.get(topic).set(subTopic, []);
       }
 
-      // Process each subtopic
-      for (const [subTopicName, questions] of Object.entries(subTopicsData)) {
-        if (!Array.isArray(questions)) {
-          return res
-            .status(400)
-            .json(
-              new ApiError(
-                400,
-                `Questions for subtopic "${subTopicName}" must be an array`
-              )
-            );
-        }
-
-        const processedQuestions = questions.map((question) => {
-          if (
-            !question.options ||
-            !Array.isArray(question.options) ||
-            question.options.length === 0 ||
-            typeof question.correctOptionIndex !== "number"
-          ) {
-            return res
-              .status(400)
-              .json(
-                new ApiError(
-                  400,
-                  `Invalid question structure in subtopic "${subTopicName}"`
-                )
-              );
-          }
-
-          // Shuffle options
-          const shuffledOptions = shuffleArray(question.options);
-          const newCorrectOptionIndex = shuffledOptions.findIndex(
-            (option) => option === question.options[question.correctOptionIndex]
-          );
-
-          return {
-            topic: question.topic,
-            subTopic: question.subTopic,
-            level: question.level,
-            questionText: question.questionText,
-            options: shuffledOptions,
-            correctOptionIndex: newCorrectOptionIndex,
-            explanation: question.explanation,
-          };
-        });
-
-        topicDoc[mainTopic].set(subTopicName, processedQuestions);
-      }
-    }
+      topicDoc.topics.get(topic).get(subTopic).push(_id);
+    });
 
     await topicDoc.save();
 
     return res
       .status(201)
-      .json(new ApiResponse(201, "done", "Questions added successfully."));
+      .json(
+        new ApiResponse(201, createdQuestions, "Questions added successfully")
+      );
   } catch (error) {
-    if (error instanceof ApiError) {
-      return res.status(error.statusCode).json(error);
-    }
-    if (error.name === "ValidationError") {
-      return res.status(400).json(new ApiError(400, error.message));
-    }
-    console.error("Error in addQuestionsByTopic:", error);
+    console.error("Error adding questions:", error);
     return res
       .status(500)
-      .json(new ApiError(500, "Error processing questions"));
+      .json(new ApiError(500, "Error adding questions", error.message));
   }
 });
 
@@ -123,31 +109,24 @@ const getTopicsStructure = asyncHandler(async (req, res) => {
     // Get the topic document
     const topicDoc = await Topic.findOne();
 
-    if (!topicDoc) {
+    if (!topicDoc || !topicDoc.topics) {
       return res
         .status(200)
         .json(new ApiResponse(200, { topics: [] }, "No topics found"));
     }
 
-    // Get main topics (filtering out MongoDB specific fields)
-    const mainTopics = Object.keys(topicDoc.toObject()).filter(
-      (key) => !["_id", "__v", "createdAt", "updatedAt"].includes(key)
-    );
+    // Convert the Map to a plain object
+    const topicObject =
+      topicDoc.topics instanceof Map
+        ? Object.fromEntries(topicDoc.topics)
+        : topicDoc.topics;
 
-    // Initialize result structure
-    const topics = mainTopics
-      .map((topic) => {
-        const subtopics =
-          topicDoc[topic] && typeof topicDoc[topic].get === "function"
-            ? Array.from(topicDoc[topic].keys())
-            : [];
-
-        return {
-          topic,
-          subtopics,
-        };
-      })
-      .filter((item) => item.subtopics.length > 0);
+    // Extract topics and subtopics
+    const topics = Object.entries(topicObject).map(([topic, subTopicsMap]) => ({
+      topic,
+      subtopics:
+        subTopicsMap instanceof Map ? Array.from(subTopicsMap.keys()) : [],
+    }));
 
     return res
       .status(200)
@@ -163,24 +142,17 @@ const getTopicsStructure = asyncHandler(async (req, res) => {
 });
 
 const getQuestionsBySubTopic = asyncHandler(async (req, res) => {
-  const { subTopic, numberOfQuestions } = req.body; // Changed from req.query to req.body
-  console.log(subTopic);
+  const { subTopic, numberOfQuestions } = req.body;
 
   try {
-    // Validate input
-    console.log(subTopic, numberOfQuestions);
     if (!subTopic || !Array.isArray(subTopic) || !numberOfQuestions) {
       return res
         .status(400)
         .json(
-          new ApiError(
-            400,
-            "Both subTopic array and numberOfQuestions are required"
-          )
+          new ApiError(400, "subTopic array and numberOfQuestions are required")
         );
     }
 
-    // Convert numberOfQuestions to integer
     const numQuestions = parseInt(numberOfQuestions);
     if (isNaN(numQuestions) || numQuestions <= 0) {
       return res
@@ -190,7 +162,6 @@ const getQuestionsBySubTopic = asyncHandler(async (req, res) => {
         );
     }
 
-    // Get the topic document
     const topicDoc = await Topic.findOne();
     if (!topicDoc) {
       return res
@@ -198,72 +169,186 @@ const getQuestionsBySubTopic = asyncHandler(async (req, res) => {
         .json(new ApiError(404, "No topics found in the database"));
     }
 
-    // Get all topic keys from the document (excluding MongoDB specific fields)
-    const topicKeys = Object.keys(topicDoc.toObject()).filter(
-      (key) => !["_id", "__v", "createdAt", "updatedAt"].includes(key)
-    );
+    let questionIds = new Set();
 
-    let allSelectedQuestions = [];
-
-    // Process each requested subtopic
     for (const currentSubTopic of subTopic) {
-      let subtopicQuestions = null;
-
-      // Find questions for current subtopic
-      for (const topic of topicKeys) {
-        if (topicDoc[topic] && topicDoc[topic].has(currentSubTopic)) {
-          const questions = topicDoc[topic].get(currentSubTopic);
-
-          if (Array.isArray(questions) && questions.length > 0) {
-            if (questions.length >= numQuestions) {
-              // If we have enough questions, randomly select the required number
-              const shuffled = [...questions].sort(() => Math.random() - 0.5);
-              subtopicQuestions = shuffled.slice(0, numQuestions);
-            } else {
-              // If we don't have enough questions, take all available questions
-              subtopicQuestions = [...questions];
-            }
-            break; // Take questions from the first topic that has this subtopic
-          }
+      for (const [topic, subTopicsMap] of topicDoc.topics.entries()) {
+        if (subTopicsMap.has(currentSubTopic)) {
+          subTopicsMap
+            .get(currentSubTopic)
+            .forEach((id) => questionIds.add(id));
         }
-      }
-
-      if (subtopicQuestions) {
-        allSelectedQuestions = [...allSelectedQuestions, ...subtopicQuestions];
       }
     }
 
-    if (allSelectedQuestions.length === 0) {
+    const validQuestionIds = [...questionIds].filter((id) =>
+      /^[0-9a-fA-F]{24}$/.test(id)
+    );
+    if (validQuestionIds.length === 0) {
       return res
         .status(404)
         .json(
-          new ApiError(404, `No questions found for the requested subtopics`)
+          new ApiError(
+            404,
+            "No valid questions found for the requested subtopics"
+          )
         );
     }
 
-    // Shuffle all selected
-    const shuffledQuestions = allSelectedQuestions.sort(
-      () => Math.random() - 0.6
+    const questions = await Question.find({ _id: { $in: validQuestionIds } })
+      .limit(numQuestions)
+      .lean();
+
+    if (questions.length === 0) {
+      return res
+        .status(404)
+        .json(
+          new ApiError(404, "No questions found for the requested subtopics")
+        );
+    }
+
+    const shuffledQuestions = questions.sort(() => Math.random() - 0.5);
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { questions: shuffledQuestions },
+          `Retrieved ${shuffledQuestions.length} questions`
+        )
+      );
+  } catch (error) {
+    return res
+      .status(500)
+      .json(
+        new ApiError(500, "Unexpected server error while retrieving questions")
+      );
+  }
+});
+
+const uploadAptitudeResult = asyncHandler(async (req, res) => {
+  try {
+    const { userId, overallScore, totalTimeTaken, testDate, selectedOptions } =
+      req.body;
+
+    // Validate required fields
+    const missingFields = [];
+    if (!userId) missingFields.push("userId");
+    if (overallScore === undefined) missingFields.push("overallScore");
+    if (!totalTimeTaken) missingFields.push("totalTimeTaken");
+    if (!testDate) missingFields.push("testDate");
+    if (!Array.isArray(selectedOptions) || selectedOptions.length === 0)
+      missingFields.push("selectedOptions");
+
+    if (missingFields.length > 0) {
+      return res
+        .status(400)
+        .json(new ApiError(400, `Missing fields: ${missingFields.join(", ")}`));
+    }
+
+    // Validate testDate
+    const parsedTestDate = new Date(testDate);
+    if (isNaN(parsedTestDate.getTime())) {
+      return res.status(400).json(new ApiError(400, "Invalid testDate format"));
+    }
+
+    // Convert selectedOptions into proper format
+    const formattedSelectedOptions = selectedOptions.map(
+      ({ question, option }) => ({
+        question: new mongoose.Types.ObjectId(question), // Store as ObjectId
+        option,
+      })
     );
 
-    return res.status(200).json(
-      new ApiResponse(
-        200,
-        {
-          questions: shuffledQuestions,
-        },
-        `Retrieved ${shuffledQuestions.length} questions successfully`
-      )
+    // Create a new aptitude test result
+    const newTestResult = await AptitudeTestResult.create({
+      selectedOptions: formattedSelectedOptions,
+      totalTimeTaken,
+      testDate: parsedTestDate,
+      overallScore,
+    });
+
+    // Push the newly created test result to the user's aptitudeTestResult array
+    await User.findByIdAndUpdate(
+      userId,
+      { $push: { aptitudeTestResult: newTestResult._id } },
+      { new: true }
     );
+
+    return res
+      .status(201)
+      .json(
+        new ApiResponse(
+          201,
+          newTestResult,
+          "Aptitude test result created and linked to user"
+        )
+      );
   } catch (error) {
-    if (error instanceof ApiError) {
-      return res.status(error.statusCode).json(error);
+    return res
+      .status(500)
+      .json(new ApiError(500, "Server error while saving test result"));
+  }
+});
+
+const getAllQuestions = asyncHandler(async (req, res) => {
+  try {
+    const topicDoc = await Topic.findOne();
+
+    if (!topicDoc) {
+      return res.status(404).json(new ApiError(404, "No questions found"));
     }
-    console.error("Error in getQuestionsBySubTopic:", error);
+
+    let allQuestions = [];
+
+    // Extract all topics
+    const mainTopics = Object.keys(topicDoc.toObject()).filter(
+      (key) => !["_id", "__v", "createdAt", "updatedAt"].includes(key)
+    );
+
+    for (const mainTopic of mainTopics) {
+      if (
+        topicDoc[mainTopic] &&
+        typeof topicDoc[mainTopic].get === "function"
+      ) {
+        for (const [subTopic, questions] of topicDoc[mainTopic]) {
+          const formattedQuestions = questions.map((q) => ({
+            topic: mainTopic,
+            subTopic: subTopic,
+            questionText: q.questionText,
+            level: q.level,
+            options: q.options,
+            correctOptionIndex: q.correctOptionIndex,
+            explanation: q.explanation,
+          }));
+
+          allQuestions = [...allQuestions, ...formattedQuestions];
+        }
+      }
+    }
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          allQuestions,
+          "All questions retrieved successfully"
+        )
+      );
+  } catch (error) {
+    console.error("Error fetching all questions:", error);
     return res
       .status(500)
       .json(new ApiError(500, "Error retrieving questions"));
   }
 });
 
-export { addQuestionsByTopic, getTopicsStructure, getQuestionsBySubTopic };
+export {
+  addQuestions,
+  getTopicsStructure,
+  getQuestionsBySubTopic,
+  uploadAptitudeResult,
+  getAllQuestions,
+};

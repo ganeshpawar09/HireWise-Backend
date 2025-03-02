@@ -47,40 +47,16 @@ const questionSchema = new mongoose.Schema({
 
 const topicSchema = new mongoose.Schema(
   {
-    dsa: {
+    topics: {
       type: Map,
-      of: [questionSchema],
-    },
-    dbms: {
-      type: Map,
-      of: [questionSchema],
-    },
-    oop: {
-      type: Map,
-      of: [questionSchema],
-    },
-    cn: {
-      type: Map,
-      of: [questionSchema],
-    },
-    os: {
-      type: Map,
-      of: [questionSchema],
-    },
-    verbal: {
-      type: Map,
-      of: [questionSchema],
-    },
-    quantitative: {
-      type: Map,
-      of: [questionSchema],
-    },
-    logical: {
-      type: Map,
-      of: [questionSchema],
+      of: {
+        type: Map,
+        of: [{ type: mongoose.Schema.Types.ObjectId, ref: "Question" }],
+      },
     },
   },
   { timestamps: true }
 );
 
 export const Topic = mongoose.model("Topic", topicSchema);
+export const Question = mongoose.model("Question", questionSchema);
