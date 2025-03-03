@@ -154,23 +154,20 @@ export const getPersonalizedJobs = asyncHandler(async (req, res) => {
     return res.status(404).json(new ApiError(404, "User not found"));
   }
 
-  const sortedClusters = user.clusters.sort(
-    (a, b) => b.percentage - a.percentage
-  );
+  // Ensure at least two clusters are considered, even if the second one has 0%
+  const sortedClusters = user.clusters
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 2); // Always take the top 2 clusters
+
   if (sortedClusters.length < 2) {
     return res
       .status(400)
-      .json(
-        new ApiError(
-          400,
-          "User must have at least 2 clusters for recommendations"
-        )
-      );
+      .json(new ApiError(400, "User must have clusters for recommendations"));
   }
 
   const [topClusterId, secondClusterId] = [
-    sortedClusters[0].clusterId,
-    sortedClusters[1].clusterId,
+    sortedClusters[0]?.clusterId,
+    sortedClusters[1]?.clusterId || sortedClusters[0]?.clusterId, // Use top cluster if there's only one
   ];
 
   const [topClusterJobs, secondClusterJobs] = await Promise.all([
