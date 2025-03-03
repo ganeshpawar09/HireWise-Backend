@@ -251,15 +251,10 @@ export const searchJobs = asyncHandler(async (req, res) => {
   const jobs = await Job.find({
     _id: { $in: cluster.jobs.map((j) => j.jobId) },
   });
-  const matchingJobs = jobs.filter(
-    (job) =>
-      cosineSimilarity(user.embedding, job.embedding) > 0.3 &&
-      (!job.applicants || !job.applicants.includes(userId))
-  );
 
   return res
     .status(200)
-    .json(new ApiResponse(200, matchingJobs, "Jobs fetched successfully"));
+    .json(new ApiResponse(200, jobs, "Jobs fetched successfully"));
 });
 
 // ✅ Apply for a Job
