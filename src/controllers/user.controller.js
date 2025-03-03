@@ -126,7 +126,7 @@ const sendOTP = asyncHandler(async (req, res) => {
     return res.status(400).json(new ApiError(400, "Invalid email format"));
   }
 
-  const otp = generateOTP();
+  const otp = generateOTP;
   const otpExpiration = new Date(Date.now() + 10 * 60 * 1000);
 
   const savedOtp = await Otp.findOneAndUpdate(
