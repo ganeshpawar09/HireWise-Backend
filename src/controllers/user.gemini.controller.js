@@ -57,6 +57,7 @@ const validateProjects = (projects) => {
     projectLink: proj.projectLink || "",
   }));
 };
+
 // Create user profile from resume
 export const createUserProfileFromResume = async (req, res) => {
   try {
@@ -68,10 +69,12 @@ export const createUserProfileFromResume = async (req, res) => {
         .json(new ApiError(400, "User ID and Resume content are required"));
     }
 
-    const user = await User.findById(userId);
+    let user = await User.findById(userId);
     if (!user) {
       return res.status(404).json(new ApiError(404, "User not found"));
     }
+
+    const previousKeySkills = user.keySkills || [];
 
     const chatSession = model.startChat({ generationConfig, history: [] });
     const prompt = `Extract and structure a comprehensive user profile from the given resume and existing profile data.
@@ -79,7 +82,9 @@ export const createUserProfileFromResume = async (req, res) => {
     Format:
     {
       "firstName": "", 
+      "middleName": "", 
       "lastName": "", 
+      "name":"", 
       "email": "", 
       "phoneNumber": "",
       "profileSummary": "", 
@@ -90,7 +95,7 @@ export const createUserProfileFromResume = async (req, res) => {
       "achievements": [], 
       "education": [{ "institution": "", "degree": "", "startYear": "", "endYear": "" }],
       "experience": [{ "companyName": "", "jobTitle": "", "startDate": "", "endDate": "" }],
-      "projects": [{ "title": "", "description": "", "technologyUsed": "", "projectLink": "" }],
+      "projects": [{ "title": "", "description": "", "technologyUsed": "", "projectLink": "" }]
     }
 
     Existing Profile Data:
@@ -104,7 +109,7 @@ export const createUserProfileFromResume = async (req, res) => {
     const result = await chatSession.sendMessage(prompt);
     const resultText = result.response.text();
 
-    // Remove markdown formatting (backticks and language identifiers)
+    // Remove markdown formatting
     const cleanedJson = resultText.replace(/```json|```/g, "").trim();
 
     let formattedProfile;
@@ -121,34 +126,44 @@ export const createUserProfileFromResume = async (req, res) => {
         .status(500)
         .json(new ApiError(500, "Failed to parse extracted profile data"));
     }
-    Object.assign(user, {
-      firstName: formattedProfile.firstName || user.firstName,
-      lastName: formattedProfile.lastName || user.lastName,
-      email: formattedProfile.email || user.email,
-      phoneNumber: formattedProfile.phoneNumber || user.phoneNumber,
-      profileSummary: formattedProfile.profileSummary || user.profileSummary,
-      profileHeadline: formattedProfile.profileHeadline || user.profileHeadline,
-      careerBreak: formattedProfile.careerBreak ?? user.careerBreak,
-      fresher: formattedProfile.fresher ?? user.fresher,
-      keySkills: formattedProfile.keySkills || user.keySkills,
-      achievements: formattedProfile.achievements || user.achievements,
-      education: formattedProfile.education?.length
-        ? validateEducation(formattedProfile.education)
-        : user.education,
-      experience: formattedProfile.experience?.length
-        ? validateExperience(formattedProfile.experience)
-        : user.experience,
-      projects: formattedProfile.projects?.length
-        ? validateProjects(formattedProfile.projects)
-        : user.projects,
+
+    // Only update fields present in the AI response
+    const updatedFields = {};
+    Object.keys(formattedProfile).forEach((key) => {
+      if (formattedProfile[key] !== undefined) {
+        updatedFields[key] = formattedProfile[key];
+      }
     });
 
+    // Validate specific fields before updating
+    if (updatedFields.education) {
+      updatedFields.education = validateEducation(updatedFields.education);
+    }
+    if (updatedFields.experience) {
+      updatedFields.experience = validateExperience(updatedFields.experience);
+    }
+    if (updatedFields.projects) {
+      updatedFields.projects = validateProjects(updatedFields.projects);
+    }
+
+    // Check if keySkills have changed
+    const newKeySkills = updatedFields.keySkills || user.keySkills;
+    const keySkillsChanged =
+      JSON.stringify(previousKeySkills.sort()) !==
+      JSON.stringify(newKeySkills.sort());
+
+    // Update user document
+    Object.assign(user, updatedFields);
     await user.save();
 
-    const response = await matchRole(user.keySkills);
-    await updateUserClusters(user, response);
+    // Update clusters only if keySkills changed
+    if (keySkillsChanged) {
+      const response = await matchRole(user.keySkills);
+      await updateUserClusters(user, response);
+      await user.save();
+    }
 
-    await user.save();
+    // Fetch the updated user with populated references
     user = await User.findById(userId)
       .populate({
         path: "aptitudeTestResult",
@@ -160,6 +175,7 @@ export const createUserProfileFromResume = async (req, res) => {
         },
       })
       .populate("mockInterviewResult");
+
     return res
       .status(200)
       .json(
