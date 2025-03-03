@@ -279,37 +279,33 @@ export const getPersonalizedJobs = asyncHandler(async (req, res) => {
   ];
 
   const [topClusterJobs, secondClusterJobs] = await Promise.all([
-    Job.find({ "clusters.clusterId": topClusterId })
-      .sort({ "clusters.percentage": -1 })
-      .limit(20),
-    Job.find({ "clusters.clusterId": secondClusterId })
-      .sort({ "clusters.percentage": -1 })
-      .limit(20),
+    Job.find({ "clusters.clusterId": topClusterId }).limit(20),
+    Job.find({ "clusters.clusterId": secondClusterId }).limit(20),
   ]);
 
-  const filterRelevantJobs = (jobs) => {
-    return jobs
-      .map((job) => ({
-        job,
-        similarity: cosineSimilarity(user.embedding, job.embedding),
-      }))
-      .filter(
-        (j) =>
-          j.similarity > 0.3 &&
-          j.job.applicants &&
-          !j.job.applicants.includes(userId)
-      )
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 10)
-      .map((j) => j.job);
-  };
+  // const filterRelevantJobs = (jobs) => {
+  //   return jobs
+  //     .map((job) => ({
+  //       job,
+  //       similarity: cosineSimilarity(user.embedding, job.embedding),
+  //     }))
+  //     .filter(
+  //       (j) =>
+  //         j.similarity > 0.3 &&
+  //         j.job.applicants &&
+  //         !j.job.applicants.includes(userId)
+  //     )
+  //     .sort((a, b) => b.similarity - a.similarity)
+  //     .slice(0, 10)
+  //     .map((j) => j.job);
+  // };
 
   return res.status(200).json(
     new ApiResponse(
       200,
       {
-        recommendedJobs: filterRelevantJobs(topClusterJobs),
-        youMightLikeJobs: filterRelevantJobs(secondClusterJobs),
+        recommendedJobs: topClusterJobs,
+        youMightLikeJobs: secondClusterJobs,
       },
       "Personalized jobs fetched successfully"
     )
