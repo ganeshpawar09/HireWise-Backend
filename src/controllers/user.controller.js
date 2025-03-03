@@ -29,7 +29,7 @@ const sendOTPEmail = async (email, otp) => {
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "Your OTP for Authentication",
+      subject: `Your OTP for Authentication (${new Date().getTime()})`,
       text: `Your OTP is: ${otp}. This OTP will expire in 10 minutes.`,
       html: `
       <!DOCTYPE html>
@@ -126,7 +126,7 @@ const sendOTP = asyncHandler(async (req, res) => {
     return res.status(400).json(new ApiError(400, "Invalid email format"));
   }
 
-  const otp = generateOTP;
+  const otp = generateOTP();
   const otpExpiration = new Date(Date.now() + 10 * 60 * 1000);
 
   const savedOtp = await Otp.findOneAndUpdate(
