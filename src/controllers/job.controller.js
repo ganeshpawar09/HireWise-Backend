@@ -4,15 +4,135 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { Job } from "../models/job.model.js";
 import { User } from "../models/user.model.js";
 import { Cluster } from "../models/cluster.model.js";
-import axios from "axios";
+import { pipeline } from "@xenova/transformers";
 
-// ✅ Cosine Similarity Function
+// import axios from "axios";
+
+// // ✅ Cosine Similarity Function
+// const cosineSimilarity = (vec1, vec2) => {
+//   if (!vec1 || !vec2 || vec1.length !== vec2.length) return 0;
+//   const dotProduct = vec1.reduce((sum, val, i) => sum + val * vec2[i], 0);
+//   const magnitude1 = Math.sqrt(vec1.reduce((sum, val) => sum + val ** 2, 0));
+//   const magnitude2 = Math.sqrt(vec2.reduce((sum, val) => sum + val ** 2, 0));
+//   return magnitude1 && magnitude2 ? dotProduct / (magnitude1 * magnitude2) : 0;
+// };
+
+// export const matchRole = async (skills) => {
+//   try {
+//     const response = await axios.post("http://0.0.0.0:8000/match-role", {
+//       skills,
+//     });
+//     return response.data; // Returns proximity_scores & user_vector
+//   } catch (error) {
+//     console.error("Error calling match_role API:", error.message);
+//     return new ApiError(500, "Failed to match user skills");
+//   }
+// };
+
+const model = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
+
+// Function to extract embeddings and ensure array format
+const getEmbeddings = async (text) => {
+  const result = await model(text, { pooling: "mean", normalize: true });
+  return result.data ? Array.from(result.data) : Array.from(result);
+};
+
+// Role-Skill Mapping
+const roleSkillData = {
+  "Frontend Developer": [
+    "React",
+    "Vue.js",
+    "Next.js",
+    "JavaScript",
+    "TypeScript",
+    "Redux",
+    "CSS",
+    "Sass",
+    "Tailwind CSS",
+    "GraphQL",
+    "Webpack",
+  ],
+  "Mobile Developer": [
+    "Flutter",
+    "Dart",
+    "Swift",
+    "Kotlin",
+    "React Native",
+    "Android",
+    "iOS",
+    "Objective-C",
+    "Xcode",
+    "Java",
+  ],
+  "Backend Developer": [
+    "Node.js",
+    "Express",
+    "MongoDB",
+    "Python",
+    "PostgreSQL",
+    "FastAPI",
+    "Java",
+    "Spring Boot",
+    "MySQL",
+    "Redis",
+    "Kafka",
+    "Docker",
+    "Kubernetes",
+    "AWS",
+  ],
+  "AI/ML Developer": [
+    "TensorFlow",
+    "PyTorch",
+    "Machine Learning",
+    "Deep Learning",
+    "NLP",
+    "Scikit-learn",
+    "Pandas",
+    "Keras",
+    "Matplotlib",
+    "OpenCV",
+  ],
+};
+
+const roles = Object.keys(roleSkillData);
+const skillTexts = Object.values(roleSkillData).map((skills) =>
+  skills.join(" ")
+);
+
+const roleSkillVectors = await Promise.all(skillTexts.map(getEmbeddings));
+
+// ✅ Fix: Debug and validate vectors
 const cosineSimilarity = (vec1, vec2) => {
-  if (!vec1 || !vec2 || vec1.length !== vec2.length) return 0;
+  if (!Array.isArray(vec1) || !Array.isArray(vec2)) {
+    throw new Error("cosineSimilarity: One or both vectors are not arrays!");
+  }
+
   const dotProduct = vec1.reduce((sum, val, i) => sum + val * vec2[i], 0);
   const magnitude1 = Math.sqrt(vec1.reduce((sum, val) => sum + val ** 2, 0));
   const magnitude2 = Math.sqrt(vec2.reduce((sum, val) => sum + val ** 2, 0));
   return magnitude1 && magnitude2 ? dotProduct / (magnitude1 * magnitude2) : 0;
+};
+
+// Function to match user skills to roles
+export const matchRole = async (userSkills, threshold = 0.3) => {
+  if (!userSkills || userSkills.length === 0) {
+    throw new Error("No skills provided");
+  }
+
+  const userText = userSkills.join(" ");
+  const userVector = await getEmbeddings(userText);
+
+  const proximityScores = roles.reduce((acc, role, i) => {
+    const score = cosineSimilarity(userVector, roleSkillVectors[i]);
+    acc[role] = score >= threshold ? score : 0.0;
+    return acc;
+  }, {});
+  return {
+    status: "success",
+    message: "Role matching complete",
+    proximity_scores: proximityScores,
+    user_vector: userVector,
+  };
 };
 
 // ✅ Validate Job Data Before Insertion
@@ -33,18 +153,6 @@ const validateJobData = (jobData) => {
     );
   }
   return null;
-};
-
-export const matchRole = async (skills) => {
-  try {
-    const response = await axios.post("http://0.0.0.0:8000/match-role", {
-      skills,
-    });
-    return response.data; // Returns proximity_scores & user_vector
-  } catch (error) {
-    console.error("Error calling match_role API:", error.message);
-    return new ApiError(500, "Failed to match user skills");
-  }
 };
 
 // Upload Jobs (Handles Validation, Clusters, and Bulk Insert)
