@@ -270,7 +270,7 @@ export const uploadJobs = asyncHandler(async (req, res) => {
 export const getPersonalizedJobs = asyncHandler(async (req, res) => {
   const { userId } = req.body;
 
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).populate("appliedJobs"); // Populate applied jobs
   if (!user) {
     return res.status(404).json(new ApiError(404, "User not found"));
   }
@@ -291,12 +291,22 @@ export const getPersonalizedJobs = asyncHandler(async (req, res) => {
   // Fetch jobs related to the top cluster
   const topClusterJobs = await Job.find({ "clusters.clusterId": topClusterId });
 
+  // Get applied job IDs
+  const appliedJobIds = new Set(
+    user.appliedJobs.map((job) => job._id.toString())
+  );
+
+  // Filter out applied jobs
+  const recommendedJobs = topClusterJobs.filter(
+    (job) => !appliedJobIds.has(job._id.toString())
+  );
+
   return res
     .status(200)
     .json(
       new ApiResponse(
         200,
-        { recommendedJobs: topClusterJobs },
+        { recommendedJobs },
         "Personalized jobs fetched successfully"
       )
     );
@@ -325,30 +335,42 @@ export const getAppliedJobs = asyncHandler(async (req, res) => {
 export const searchJobs = asyncHandler(async (req, res) => {
   const { userId, clusterName } = req.body;
 
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).populate("appliedJobs"); // Populate applied jobs
   const cluster = await Cluster.findOne({ name: clusterName });
 
   if (!user || !cluster) {
     return res.status(404).json(new ApiError(404, "User or Cluster not found"));
   }
 
+  // Update user's cluster percentage
   const userCluster = user.clusters.find((c) =>
     c.clusterId.equals(cluster._id)
   );
   if (userCluster) {
-    userCluster.percentage = userCluster.percentage + 0.05;
+    userCluster.percentage += 0.05;
   } else {
     user.clusters.push({ clusterId: cluster._id, percentage: 0.05 });
   }
   await user.save();
 
+  // Fetch jobs related to the cluster
   const jobs = await Job.find({
     _id: { $in: cluster.jobs.map((j) => j.jobId) },
   });
 
+  // Get applied job IDs
+  const appliedJobIds = new Set(
+    user.appliedJobs.map((job) => job._id.toString())
+  );
+
+  // Filter out applied jobs
+  const filteredJobs = jobs.filter(
+    (job) => !appliedJobIds.has(job._id.toString())
+  );
+
   return res
     .status(200)
-    .json(new ApiResponse(200, jobs, "Jobs fetched successfully"));
+    .json(new ApiResponse(200, filteredJobs, "Jobs fetched successfully"));
 });
 
 // ✅ Apply for a Job
