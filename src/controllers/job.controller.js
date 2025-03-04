@@ -155,7 +155,6 @@ const validateJobData = (jobData) => {
   return null;
 };
 
-// Upload Jobs (Handles Validation, Clusters, and Bulk Insert)
 export const uploadJobs = asyncHandler(async (req, res) => {
   const jobsArray = req.body;
   if (!Array.isArray(jobsArray) || jobsArray.length === 0) {
@@ -181,10 +180,7 @@ export const uploadJobs = asyncHandler(async (req, res) => {
         continue;
       }
 
-      const clusterNames = Object.entries(processedData.proximity_scores)
-        .filter(([_, percentage]) => percentage > 0.3)
-        .map(([clusterName]) => clusterName);
-
+      const clusterNames = Object.keys(processedData.proximity_scores);
       let existingClusters = await Cluster.find({
         name: { $in: clusterNames },
       });
@@ -198,10 +194,27 @@ export const uploadJobs = asyncHandler(async (req, res) => {
         existingClusters = [...existingClusters, ...savedClusters];
       }
 
-      const clusters = existingClusters.map((cluster) => ({
-        clusterId: cluster._id,
-        percentage: processedData.proximity_scores[cluster.name],
-      }));
+      // Find the top cluster
+      let topCluster = existingClusters.reduce((max, cluster) => {
+        return processedData.proximity_scores[cluster.name] >
+          processedData.proximity_scores[max.name]
+          ? cluster
+          : max;
+      }, existingClusters[0]);
+
+      // If no clusters exist, create a new one
+      if (!topCluster) {
+        topCluster = new Cluster({ name: clusterNames[0], jobs: [] });
+        await topCluster.save();
+        existingClusters.push(topCluster);
+      }
+
+      const clusters = [
+        {
+          clusterId: topCluster._id,
+          percentage: processedData.proximity_scores[topCluster.name],
+        },
+      ];
 
       const newJob = new Job({
         ...jobData,
@@ -224,16 +237,16 @@ export const uploadJobs = asyncHandler(async (req, res) => {
   if (jobsToSave.length > 0) {
     const savedJobs = await Job.insertMany(jobsToSave.map(({ job }) => job));
 
-    const clusterUpdates = jobsToSave.flatMap(({ job, clusters }) =>
-      clusters.map((cluster) => ({
-        updateOne: {
-          filter: { _id: cluster.clusterId },
-          update: {
-            $push: { jobs: { jobId: job._id, percentage: cluster.percentage } },
+    const clusterUpdates = jobsToSave.map(({ job, clusters }) => ({
+      updateOne: {
+        filter: { _id: clusters[0].clusterId },
+        update: {
+          $push: {
+            jobs: { jobId: job._id, percentage: clusters[0].percentage },
           },
         },
-      }))
-    );
+      },
+    }));
 
     await Cluster.bulkWrite(clusterUpdates);
 
@@ -262,54 +275,31 @@ export const getPersonalizedJobs = asyncHandler(async (req, res) => {
     return res.status(404).json(new ApiError(404, "User not found"));
   }
 
-  // Ensure at least two clusters are considered, even if the second one has 0%
-  const sortedClusters = user.clusters
-    .sort((a, b) => b.percentage - a.percentage)
-    .slice(0, 2); // Always take the top 2 clusters
+  // Sort user clusters by percentage in descending order
+  const sortedClusters = user.clusters.sort(
+    (a, b) => b.percentage - a.percentage
+  );
 
-  if (sortedClusters.length < 2) {
+  // Get the top cluster ID
+  const topClusterId = sortedClusters[0]?.clusterId;
+  if (!topClusterId) {
     return res
-      .status(400)
-      .json(new ApiError(400, "User must have clusters for recommendations"));
+      .status(404)
+      .json(new ApiError(404, "No clusters found for the user"));
   }
 
-  const [topClusterId, secondClusterId] = [
-    sortedClusters[0]?.clusterId,
-    sortedClusters[1]?.clusterId || sortedClusters[0]?.clusterId, // Use top cluster if there's only one
-  ];
+  // Fetch jobs related to the top cluster
+  const topClusterJobs = await Job.find({ "clusters.clusterId": topClusterId });
 
-  const [topClusterJobs, secondClusterJobs] = await Promise.all([
-    Job.find({ "clusters.clusterId": topClusterId }).limit(20),
-    Job.find({ "clusters.clusterId": secondClusterId }).limit(20),
-  ]);
-
-  // const filterRelevantJobs = (jobs) => {
-  //   return jobs
-  //     .map((job) => ({
-  //       job,
-  //       similarity: cosineSimilarity(user.embedding, job.embedding),
-  //     }))
-  //     .filter(
-  //       (j) =>
-  //         j.similarity > 0.3 &&
-  //         j.job.applicants &&
-  //         !j.job.applicants.includes(userId)
-  //     )
-  //     .sort((a, b) => b.similarity - a.similarity)
-  //     .slice(0, 10)
-  //     .map((j) => j.job);
-  // };
-
-  return res.status(200).json(
-    new ApiResponse(
-      200,
-      {
-        recommendedJobs: topClusterJobs,
-        youMightLikeJobs: secondClusterJobs,
-      },
-      "Personalized jobs fetched successfully"
-    )
-  );
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { recommendedJobs: topClusterJobs },
+        "Personalized jobs fetched successfully"
+      )
+    );
 });
 
 export const getAppliedJobs = asyncHandler(async (req, res) => {
@@ -346,9 +336,9 @@ export const searchJobs = asyncHandler(async (req, res) => {
     c.clusterId.equals(cluster._id)
   );
   if (userCluster) {
-    userCluster.percentage = Math.min(userCluster.percentage + 5, 100);
+    userCluster.percentage = userCluster.percentage + 0.05;
   } else {
-    user.clusters.push({ clusterId: cluster._id, percentage: 5 });
+    user.clusters.push({ clusterId: cluster._id, percentage: 0.05 });
   }
   await user.save();
 
@@ -376,14 +366,11 @@ export const applyJob = asyncHandler(async (req, res) => {
       c.clusterId.equals(jobCluster.clusterId)
     );
     if (userCluster) {
-      userCluster.percentage = Math.min(
-        userCluster.percentage + jobCluster.percentage * 0.1,
-        100
-      );
+      userCluster.percentage = userCluster.percentage + 0.1;
     } else {
       user.clusters.push({
         clusterId: jobCluster.clusterId,
-        percentage: jobCluster.percentage * 0.1,
+        percentage: 0.1,
       });
     }
   });

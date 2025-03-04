@@ -523,6 +523,18 @@ const leetCodeProfileFetcher = async (req, res) => {
 
     await user.save();
 
+    await user.populate({
+      path: "aptitudeTestResult",
+      populate: {
+        path: "selectedOptions.question",
+        model: "Question",
+        select:
+          "questionText topic subTopic level options correctOptionIndex explanation",
+      },
+    });
+
+    await user.populate("mockInterviewResult");
+
     return res.status(200).json({
       status: 200,
       data: { user },
@@ -617,6 +629,18 @@ const githubProfileFetcher = asyncHandler(async (req, res) => {
 
     // Save changes
     await user.save();
+
+    await user.populate({
+      path: "aptitudeTestResult",
+      populate: {
+        path: "selectedOptions.question",
+        model: "Question",
+        select:
+          "questionText topic subTopic level options correctOptionIndex explanation",
+      },
+    });
+
+    await user.populate("mockInterviewResult");
 
     return res
       .status(200)
