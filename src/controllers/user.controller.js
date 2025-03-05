@@ -226,16 +226,7 @@ export async function updateUserClusters(user, result) {
       await cluster.save();
     }
 
-    // Find existing cluster percentage for the user
-    const existingCluster = user.clusters.find((c) =>
-      c.clusterId.equals(cluster._id)
-    );
-
-    if (!existingCluster || existingCluster.percentage < percentage) {
-      clusterUpdates.push({ clusterId: cluster._id, percentage });
-    } else {
-      clusterUpdates.push(existingCluster);
-    }
+    clusterUpdates.push({ clusterId: cluster._id, percentage });
   }
 
   // Update user's clusters
