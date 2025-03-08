@@ -723,17 +723,17 @@ const githubProfileFetcher = asyncHandler(async (req, res) => {
     // Save changes
     await user.save();
 
-    await user.populate({
-      path: "aptitudeTestResult",
-      populate: {
-        path: "selectedOptions.question",
-        model: "Question",
-        select:
-          "questionText topic subTopic level options correctOptionIndex explanation",
-      },
-    });
+    // await user.populate({
+    //   path: "aptitudeTestResult",
+    //   populate: {
+    //     path: "selectedOptions.question",
+    //     model: "Question",
+    //     select:
+    //       "questionText topic subTopic level options correctOptionIndex explanation",
+    //   },
+    // });
 
-    await user.populate("mockInterviewResult");
+    // await user.populate("mockInterviewResult");
 
     return res
       .status(200)
