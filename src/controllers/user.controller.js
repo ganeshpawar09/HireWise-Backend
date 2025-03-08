@@ -3,12 +3,10 @@ import { Otp } from "../models/otp.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import AptitudeTestResult from "../models/aptitude_result.model.js";
 import nodemailer from "nodemailer";
 import otpGenerator from "otp-generator";
 import { matchRole } from "./job.controller.js";
 import { Cluster } from "../models/cluster.model.js";
-import { Question } from "../models/topic.model.js";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -17,7 +15,7 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASSWORD,
   },
 });
-const generateOTP = otpGenerator.generate(6, {
+const generateOTP = otpGenerator.generate(4, {
   upperCaseAlphabets: false,
   lowerCaseAlphabets: false,
   specialChars: false,
@@ -26,90 +24,185 @@ const generateOTP = otpGenerator.generate(6, {
 const sendOTPEmail = async (email, otp) => {
   try {
     const currentYear = new Date().getFullYear();
+    const timestamp = new Date().toISOString();
+    const uniqueId = Math.random().toString(36).substring(2, 8).toUpperCase();
+
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
-      subject: `Your OTP for Authentication (${new Date().getTime()})`,
-      text: `Your OTP is: ${otp}. This OTP will expire in 10 minutes.`,
+      subject: `HireWise Secure Code [${uniqueId}] - ${
+        timestamp.split("T")[0]
+      }`,
+      text: `Your verification code is: ${otp}. This code will expire in 10 minutes.`,
       html: `
       <!DOCTYPE html>
       <html>
       <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
+              @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap');
+              
               body {
-                  font-family: Arial, sans-serif;
+                  font-family: 'Outfit', sans-serif;
                   line-height: 1.6;
-                  color: #333;
-                  max-width: 600px;
-                  margin: 0 auto;
-                  padding: 20px;
+                  color: #E6EDF3;
+                  background-color: #0D1117;
+                  margin: 0;
+                  padding: 0;
               }
               .container {
-                  background-color: #f9f9f9;
-                  border-radius: 8px;
-                  padding: 20px;
-                  margin: 20px 0;
+                  max-width: 600px;
+                  margin: 0 auto;
+                  padding: 40px 20px;
+              }
+              .card {
+                  background: linear-gradient(145deg, #12151E, #1C2333);
+                  border-radius: 16px;
+                  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+                  overflow: hidden;
+                  border: 1px solid rgba(255, 255, 255, 0.1);
               }
               .header {
+                  background: linear-gradient(90deg, #3D5AFE, #00B8D4);
+                  padding: 30px;
                   text-align: center;
-                  margin-bottom: 30px;
+              }
+              .logo {
+                  margin-bottom: 15px;
+                  font-size: 32px;
+                  font-weight: 600;
+                  color: white;
+                  letter-spacing: 1px;
+              }
+              .content {
+                  padding: 30px;
+              }
+              .otp-container {
+                  margin: 30px 0;
+                  text-align: center;
               }
               .otp-box {
-                  background-color: #ffffff;
+                  background: rgba(255, 255, 255, 0.05);
+                  border-radius: 12px;
+                  padding: 20px;
+                  letter-spacing: 8px;
+                  font-size: 32px;
+                  font-weight: 600;
+                  color: #FFFFFF;
+                  border: 1px solid rgba(255, 255, 255, 0.1);
+                  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+                  display: inline-block;
+                  min-width: 60%;
+              }
+              .timer {
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  margin: 25px 0;
+                  color: #8B949E;
+              }
+              .timer-icon {
+                  margin-right: 10px;
+                  font-size: 20px;
+              }
+              .warning {
+                  margin: 25px 0;
                   padding: 15px;
-                  border-radius: 4px;
+                  border-radius: 8px;
+                  background-color: rgba(240, 143, 43, 0.1);
+                  border-left: 4px solid #F08F2B;
+                  color: #F0C97C;
+              }
+              .unique-id {
                   text-align: center;
-                  font-size: 24px;
-                  font-weight: bold;
-                  margin: 20px 0;
-                  border: 1px solid #ddd;
+                  font-family: monospace;
+                  background: rgba(61, 90, 254, 0.1);
+                  color: #3D5AFE;
+                  padding: 8px 16px;
+                  border-radius: 20px;
+                  display: inline-block;
+                  margin: 10px 0;
+                  letter-spacing: 2px;
               }
               .footer {
                   text-align: center;
-                  font-size: 12px;
-                  color: #666;
-                  margin-top: 30px;
+                  padding: 30px;
+                  color: #8B949E;
+                  font-size: 13px;
+                  border-top: 1px solid rgba(255, 255, 255, 0.05);
               }
-              .warning {
-                  color: #666;
-                  font-style: italic;
+              .social-icons {
+                  margin: 15px 0;
+              }
+              .social-icons a {
+                  display: inline-block;
+                  margin: 0 10px;
+                  color: #8B949E;
+                  text-decoration: none;
+              }
+              .links a {
+                  color: #58A6FF;
+                  text-decoration: none;
+                  margin: 0 10px;
               }
           </style>
       </head>
       <body>
           <div class="container">
-              <div class="header">
-                  <h1>HireWise</h1>
-                  <p>Your Career Growth Partner</p>
-              </div>
-              
-              <h2>Authentication OTP</h2>
-              <p>Your One-Time Password is:</p>
-              
-              <div class="otp-box">
-                  ${otp}
-              </div>
-              
-              <p>⏰ This OTP will expire in <strong>10 minutes</strong></p>
-              <p class="warning">🔒 If you didn't request this OTP, please ignore this email.</p>
-              
-              <div class="footer">
-                  <p>© ${currentYear} HireWise. All rights reserved.</p>
-                  <p>
-                      <a href="#">Terms of Service</a> | 
-                      <a href="#">Privacy Policy</a> | 
-                      <a href="#">Contact Support</a>
-                  </p>
+              <div class="card">
+                  <div class="header">
+                      <div class="logo">HireWise</div>
+                      <p>Your Career Growth Partner</p>
+                      <div class="unique-id">REF: ${uniqueId}</div>
+                  </div>
+                  
+                  <div class="content">
+                      <h2>Verification Code</h2>
+                      <p>Hi there,</p>
+                      <p>Use the secure verification code below to complete your authentication:</p>
+                      
+                      <div class="otp-container">
+                          <div class="otp-box">${otp}</div>
+                      </div>
+                      
+                      <div class="timer">
+                          <span class="timer-icon">⏱️</span>
+                          <span>This code expires in <strong>10 minutes</strong></span>
+                      </div>
+                      
+                      <div class="warning">
+                          <p><strong>Security Notice:</strong> If you didn't request this code, please secure your account immediately by changing your password.</p>
+                      </div>
+                  </div>
+                  
+                  <div class="footer">
+                      <div class="social-icons">
+                          <a href="#">Twitter</a>
+                          <a href="#">LinkedIn</a>
+                          <a href="#">Instagram</a>
+                      </div>
+                      <p>© ${currentYear} HireWise. All rights reserved.</p>
+                      <div class="links">
+                          <a href="#">Privacy Policy</a>
+                          <a href="#">Terms of Service</a>
+                          <a href="#">Support</a>
+                      </div>
+                  </div>
               </div>
           </div>
       </body>
       </html>
-  `,
+      `,
     };
 
     await transporter.sendMail(mailOptions);
+    return true;
   } catch (error) {
-    return new ApiError(500, "Error sending OTP email: " + error.message);
+    return new ApiError(
+      500,
+      "Error sending verification code: " + error.message
+    );
   }
 };
 

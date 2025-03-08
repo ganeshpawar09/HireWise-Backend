@@ -6,29 +6,6 @@ import { User } from "../models/user.model.js";
 import { Cluster } from "../models/cluster.model.js";
 import { pipeline } from "@xenova/transformers";
 
-// import axios from "axios";
-
-// // ✅ Cosine Similarity Function
-// const cosineSimilarity = (vec1, vec2) => {
-//   if (!vec1 || !vec2 || vec1.length !== vec2.length) return 0;
-//   const dotProduct = vec1.reduce((sum, val, i) => sum + val * vec2[i], 0);
-//   const magnitude1 = Math.sqrt(vec1.reduce((sum, val) => sum + val ** 2, 0));
-//   const magnitude2 = Math.sqrt(vec2.reduce((sum, val) => sum + val ** 2, 0));
-//   return magnitude1 && magnitude2 ? dotProduct / (magnitude1 * magnitude2) : 0;
-// };
-
-// export const matchRole = async (skills) => {
-//   try {
-//     const response = await axios.post("http://0.0.0.0:8000/match-role", {
-//       skills,
-//     });
-//     return response.data; // Returns proximity_scores & user_vector
-//   } catch (error) {
-//     console.error("Error calling match_role API:", error.message);
-//     return new ApiError(500, "Failed to match user skills");
-//   }
-// };
-
 const model = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
 
 // Function to extract embeddings and ensure array format
@@ -266,113 +243,6 @@ export const uploadJobs = asyncHandler(async (req, res) => {
     .json(new ApiResponse(400, { failedJobs }, "All jobs failed to process"));
 });
 
-// ✅ Get Personalized Jobs
-export const getPersonalizedJobs = asyncHandler(async (req, res) => {
-  const { userId } = req.body;
-
-  const user = await User.findById(userId).populate("appliedJobs"); // Populate applied jobs
-  if (!user) {
-    return res.status(404).json(new ApiError(404, "User not found"));
-  }
-
-  // Sort user clusters by percentage in descending order
-  const sortedClusters = user.clusters.sort(
-    (a, b) => b.percentage - a.percentage
-  );
-
-  // Get the top cluster ID
-  const topClusterId = sortedClusters[0]?.clusterId;
-  if (!topClusterId) {
-    return res
-      .status(404)
-      .json(new ApiError(404, "No clusters found for the user"));
-  }
-
-  // Fetch jobs related to the top cluster
-  const topClusterJobs = await Job.find({ "clusters.clusterId": topClusterId });
-
-  // Get applied job IDs
-  const appliedJobIds = new Set(
-    user.appliedJobs.map((job) => job._id.toString())
-  );
-
-  // Filter out applied jobs
-  const recommendedJobs = topClusterJobs.filter(
-    (job) => !appliedJobIds.has(job._id.toString())
-  );
-
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        { recommendedJobs },
-        "Personalized jobs fetched successfully"
-      )
-    );
-});
-
-export const getAppliedJobs = asyncHandler(async (req, res) => {
-  const { userId } = req.body;
-
-  const user = await User.findById(userId).populate("appliedJobs");
-  if (!user) {
-    return res.status(404).json(new ApiError(404, "User not found"));
-  }
-
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        user.appliedJobs,
-        "Applied jobs fetched successfully"
-      )
-    );
-});
-
-// ✅ Search Jobs by Cluster
-export const searchJobs = asyncHandler(async (req, res) => {
-  const { userId, clusterName } = req.body;
-
-  const user = await User.findById(userId).populate("appliedJobs"); // Populate applied jobs
-  const cluster = await Cluster.findOne({ name: clusterName });
-
-  if (!user || !cluster) {
-    return res.status(404).json(new ApiError(404, "User or Cluster not found"));
-  }
-
-  // Update user's cluster percentage
-  const userCluster = user.clusters.find((c) =>
-    c.clusterId.equals(cluster._id)
-  );
-  if (userCluster) {
-    userCluster.percentage += 0.05;
-  } else {
-    user.clusters.push({ clusterId: cluster._id, percentage: 0.05 });
-  }
-  await user.save();
-
-  // Fetch jobs related to the cluster
-  const jobs = await Job.find({
-    _id: { $in: cluster.jobs.map((j) => j.jobId) },
-  });
-
-  // Get applied job IDs
-  const appliedJobIds = new Set(
-    user.appliedJobs.map((job) => job._id.toString())
-  );
-
-  // Filter out applied jobs
-  const filteredJobs = jobs.filter(
-    (job) => !appliedJobIds.has(job._id.toString())
-  );
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, filteredJobs, "Jobs fetched successfully"));
-});
-
 // ✅ Apply for a Job
 export const applyJob = asyncHandler(async (req, res) => {
   const { userId, jobId } = req.body;
@@ -406,4 +276,147 @@ export const applyJob = asyncHandler(async (req, res) => {
   return res
     .status(200)
     .json(new ApiResponse(200, null, "Job application successful"));
+});
+
+export const getAppliedJobs = asyncHandler(async (req, res) => {
+  const { userId } = req.body;
+
+  const user = await User.findById(userId).populate("appliedJobs");
+  if (!user) {
+    return res.status(404).json(new ApiError(404, "User not found"));
+  }
+
+  // Calculate match percentage for each applied job
+  const appliedJobsWithMatch = user.appliedJobs.map((job) => {
+    // Find the highest cluster match percentage for the job
+    const jobCluster = job.clusters.find((c) =>
+      user.clusters.some((uc) => uc.clusterId.equals(c.clusterId))
+    );
+
+    return {
+      ...job.toObject(),
+      matchPercentage:
+        Math.max(0, cosineSimilarity(user.embedding, job.embedding) * 100) || 0,
+    };
+  });
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        appliedJobsWithMatch,
+        "Applied jobs fetched successfully"
+      )
+    );
+});
+
+// ✅ Search Jobs by Cluster (with match percentage)
+export const searchJobs = asyncHandler(async (req, res) => {
+  const { userId, clusterName } = req.body;
+
+  const user = await User.findById(userId).populate("appliedJobs");
+  const cluster = await Cluster.findOne({ name: clusterName });
+
+  if (!user || !cluster) {
+    return res.status(404).json(new ApiError(404, "User or Cluster not found"));
+  }
+
+  // Find user's cluster percentage
+  const userCluster = user.clusters.find((c) =>
+    c.clusterId.equals(cluster._id)
+  );
+  const userClusterPercentage = userCluster ? userCluster.percentage : 0;
+
+  // Update user's cluster percentage
+  if (userCluster) {
+    userCluster.percentage += 0.05;
+  } else {
+    user.clusters.push({ clusterId: cluster._id, percentage: 0.05 });
+  }
+  await user.save();
+
+  // Fetch jobs related to the cluster
+  const jobs = await Job.find({
+    _id: { $in: cluster.jobs.map((j) => j.jobId) },
+  });
+
+  // Get applied job IDs
+  const appliedJobIds = new Set(
+    user.appliedJobs.map((job) => job._id.toString())
+  );
+
+  // Filter out applied jobs and add match percentage
+
+  const jobsWithMatch = jobs
+    .filter((job) => !appliedJobIds.has(job._id.toString()))
+    .map((job) => ({
+      ...job.toObject(),
+      matchPercentage:
+        Math.max(0, cosineSimilarity(user.embedding, job.embedding) * 100) || 0,
+    }))
+    .sort((a, b) => b.matchPercentage - a.matchPercentage); // Sort by match percentage
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, jobsWithMatch, "Jobs fetched successfully"));
+});
+
+// ✅ Get Personalized Jobs (with match percentage)
+export const getPersonalizedJobs = asyncHandler(async (req, res) => {
+  const { userId } = req.body;
+
+  const user = await User.findById(userId).populate("appliedJobs");
+  if (!user) {
+    return res.status(404).json(new ApiError(404, "User not found"));
+  }
+
+  // Sort user clusters by percentage in descending order
+  const sortedClusters = user.clusters.sort(
+    (a, b) => b.percentage - a.percentage
+  );
+
+  // Get the top cluster ID and its percentage
+  const topCluster = sortedClusters[0];
+  if (!topCluster) {
+    return res
+      .status(404)
+      .json(new ApiError(404, "No clusters found for the user"));
+  }
+
+  // Fetch jobs related to the top cluster
+  const topClusterJobs = await Job.find({
+    "clusters.clusterId": topCluster.clusterId,
+  });
+
+  // Get applied job IDs
+  const appliedJobIds = new Set(
+    user.appliedJobs.map((job) => job._id.toString())
+  );
+
+  // Filter out applied jobs and add match percentage
+  const recommendedJobs = topClusterJobs
+    .filter((job) => !appliedJobIds.has(job._id.toString()))
+    .map((job) => {
+      const jobCluster = job.clusters.find((c) =>
+        c.clusterId.equals(topCluster.clusterId)
+      );
+      return {
+        ...job.toObject(),
+        matchPercentage:
+          Math.max(0, cosineSimilarity(user.embedding, job.embedding) * 100) ||
+          0,
+      };
+    })
+    .sort((a, b) => b.matchPercentage - a.matchPercentage); // Sort by match percentage
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { recommendedJobs },
+        "Personalized jobs fetched successfully"
+      )
+    );
 });
