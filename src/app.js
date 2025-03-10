@@ -7,6 +7,7 @@ import userRouter from "./routes/user.route.js";
 import jobRouter from "./routes/job.route.js";
 import topicRouter from "./routes/topic.route.js";
 import mockInterviewRouter from "./routes/mock.interview.route.js";
+import hackathonRouter from "./routes/hackathon.route.js";
 
 dotenv.config();
 
@@ -29,5 +30,6 @@ app.use("/api/user", userRouter);
 app.use("/api/job", jobRouter);
 app.use("/api/topic", topicRouter);
 app.use("/api/mockInterview", mockInterviewRouter);
+app.use("/api/hackathon", hackathonRouter);
 
 export { app };

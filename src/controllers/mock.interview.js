@@ -57,7 +57,7 @@ export const processVideo = async (req, res) => {
     // Call processing API
     const processingApiUrl = "";
     const response = await axios.post(
-      "http://192.168.14.68:8000/process-video",
+      "http://0.0.0.0:8000/process-video",
       {
         cloudinary_url: videoUrl,
         question: question,

@@ -287,18 +287,13 @@ export const getAppliedJobs = asyncHandler(async (req, res) => {
   }
 
   // Calculate match percentage for each applied job
-  const appliedJobsWithMatch = user.appliedJobs.map((job) => {
-    // Find the highest cluster match percentage for the job
-    const jobCluster = job.clusters.find((c) =>
-      user.clusters.some((uc) => uc.clusterId.equals(c.clusterId))
-    );
-
-    return {
+  const appliedJobsWithMatch = user.appliedJobs
+    .map((job) => ({
       ...job.toObject(),
       matchPercentage:
         Math.max(0, cosineSimilarity(user.embedding, job.embedding) * 100) || 0,
-    };
-  });
+    }))
+    .reverse();
 
   return res
     .status(200)
