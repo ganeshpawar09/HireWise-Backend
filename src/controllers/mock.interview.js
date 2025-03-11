@@ -45,44 +45,36 @@ export const uploadVideo = async (req, res) => {
 export const processVideo = async (req, res) => {
   try {
     const { userId, videoUrl, question } = req.body;
-    console.log([userId, videoUrl, question]);
+    console.log("Received Data:", { userId, videoUrl, question });
+
     if (!userId || !videoUrl || !question) {
       return res
         .status(400)
-        .json(
-          new ApiError(400, "User ID, video URL, and question are required")
-        );
+        .json(new ApiError(400, "User ID, video URL, and question are required"));
     }
 
-    // Call processing API
-    const processingApiUrl = "";
+    // Call the external video processing API
     const response = await axios.post(
       "http://0.0.0.0:8000/process-video",
-      {
-        cloudinary_url: videoUrl,
-        question: question,
-      },
-      {
-        headers: { "Content-Type": "application/json" },
-      }
+      { cloudinary_url: videoUrl, question },
+      { headers: { "Content-Type": "application/json" } }
     );
 
-    console.log(response.data);
-    if (response.data.status !== "success") {
+    console.log("Processing API Response:", response.data);
+
+    if (!response.data || response.data.status !== "success") {
       return res
         .status(500)
-        .json(
-          new ApiError(500, `Error processing video ${response.data.message}`)
-        );
+        .json(new ApiError(500, `Error processing video: ${response.data?.message || "Unknown error"}`));
     }
 
-    // Find user
+    // Find the user
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json(new ApiError(404, "User not found"));
     }
 
-    // Create a new MockInterviewResult document
+    // Create and save the new MockInterviewResult document
     const mockInterviewResult = new MockInterviewResult({
       question,
       video_confidence: response.data.video_confidence,
@@ -92,9 +84,9 @@ export const processVideo = async (req, res) => {
       grammar: response.data.grammar,
     });
 
-    await mockInterviewResult.save(); // Save the new record
+    await mockInterviewResult.save();
 
-    // Update user's mockInterviewResult array with ObjectId reference
+    // Update the user's mockInterviewResult array with the new result
     user.mockInterviewResult.push(mockInterviewResult._id);
     await user.save();
 
